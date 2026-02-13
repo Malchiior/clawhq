@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ClawHQ — Your AI Command Center | Deploy AI Agents in 30 Seconds</title>
+<meta name="description" content="Deploy powerful AI agents in 30 seconds. No coding required. All channels, all models, one platform.">
+<meta name="keywords" content="AI agents, deploy AI, AI command center, chatbot deployment, AI platform">
+<meta property="og:title" content="ClawHQ — Your AI Command Center">
+<meta property="og:description" content="Deploy powerful AI agents in 30 seconds. No coding required.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://clawhq.dev">
+<meta property="og:image" content="https://clawhq.dev/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="ClawHQ — Your AI Command Center">
+<meta name="twitter:description" content="Deploy powerful AI agents in 30 seconds. No coding required.">
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+--bg:#060a14;--bg2:#0c1222;--bg3:#111827;
+--blue:#3b82f6;--blue-glow:#2563eb;--gold:#d4a017;--gold-light:#f0c040;
+--text:#e2e8f0;--text-dim:#94a3b8;--white:#fff;
+--radius:12px;--radius-lg:20px;
+}
+html{scroll-behavior:smooth;font-size:16px}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--text);line-height:1.6;overflow-x:hidden}
+a{color:inherit;text-decoration:none}
+.container{max-width:1200px;margin:0 auto;padding:0 24px}
+
+/* NAV */
+nav{position:fixed;top:0;left:0;right:0;z-index:100;padding:16px 0;transition:background .3s,backdrop-filter .3s}
+nav.scrolled{background:rgba(6,10,20,.85);backdrop-filter:blur(20px);border-bottom:1px solid rgba(59,130,246,.1)}
+nav .container{display:flex;align-items:center;justify-content:space-between}
+.logo{font-size:1.5rem;font-weight:800;letter-spacing:-.02em}
+.logo span:first-child{background:linear-gradient(135deg,var(--blue),var(--gold));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.logo span:last-child{color:var(--text-dim);font-weight:400;font-size:.9rem;margin-left:2px}
+.nav-links{display:flex;gap:28px;align-items:center}
+.nav-links a{font-size:.9rem;color:var(--text-dim);transition:color .2s}
+.nav-links a:hover{color:var(--white)}
+.btn{display:inline-flex;align-items:center;justify-content:center;padding:10px 24px;border-radius:8px;font-weight:600;font-size:.9rem;transition:all .25s;cursor:pointer;border:none}
+.btn-primary{background:linear-gradient(135deg,var(--blue),#6366f1);color:#fff;box-shadow:0 0 24px rgba(59,130,246,.3)}
+.btn-primary:hover{transform:translateY(-2px);box-shadow:0 0 40px rgba(59,130,246,.5)}
+.btn-outline{border:1px solid rgba(255,255,255,.15);color:var(--white);background:transparent}
+.btn-outline:hover{border-color:var(--blue);background:rgba(59,130,246,.08)}
+.btn-gold{background:linear-gradient(135deg,var(--gold),#e6a800);color:#000;font-weight:700;box-shadow:0 0 24px rgba(212,160,23,.3)}
+.btn-gold:hover{transform:translateY(-2px);box-shadow:0 0 40px rgba(212,160,23,.5)}
+.mobile-menu{display:none;background:none;border:none;color:#fff;font-size:1.5rem;cursor:pointer}
+
+/* HERO */
+.hero{position:relative;min-height:100vh;display:flex;align-items:center;justify-content:center;text-align:center;padding:120px 24px 80px;overflow:hidden}
+.hero-bg{position:absolute;inset:0;background:radial-gradient(ellipse 80% 60% at 50% 40%,rgba(59,130,246,.12),transparent),radial-gradient(ellipse 60% 50% at 30% 60%,rgba(99,102,241,.08),transparent),radial-gradient(ellipse 50% 40% at 70% 30%,rgba(212,160,23,.06),transparent);animation:heroPulse 8s ease-in-out infinite alternate}
+@keyframes heroPulse{0%{opacity:.8;transform:scale(1)}100%{opacity:1;transform:scale(1.05)}}
+.hero-grid{position:absolute;inset:0;background-image:linear-gradient(rgba(59,130,246,.03) 1px,transparent 1px),linear-gradient(90deg,rgba(59,130,246,.03) 1px,transparent 1px);background-size:60px 60px;mask-image:radial-gradient(ellipse 70% 60% at 50% 50%,#000,transparent)}
+.hero-content{position:relative;z-index:1;max-width:800px}
+.hero-badge{display:inline-flex;align-items:center;gap:8px;padding:6px 16px;border-radius:999px;border:1px solid rgba(59,130,246,.3);background:rgba(59,130,246,.08);font-size:.8rem;color:var(--blue);margin-bottom:24px;font-weight:500}
+.hero-badge::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--blue);animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+.hero h1{font-size:clamp(2.5rem,6vw,4.5rem);font-weight:800;letter-spacing:-.03em;line-height:1.1;margin-bottom:20px}
+.hero h1 .gradient{background:linear-gradient(135deg,var(--blue),var(--gold-light));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.hero p{font-size:clamp(1rem,2vw,1.3rem);color:var(--text-dim);max-width:560px;margin:0 auto 36px;line-height:1.7}
+.hero-btns{display:flex;gap:16px;justify-content:center;flex-wrap:wrap}
+
+/* SOCIAL PROOF */
+.social-proof{padding:48px 0;border-top:1px solid rgba(255,255,255,.05);border-bottom:1px solid rgba(255,255,255,.05);background:var(--bg2)}
+.social-proof .container{text-align:center}
+.social-proof p{color:var(--text-dim);font-size:.85rem;text-transform:uppercase;letter-spacing:.1em;margin-bottom:24px}
+.logos{display:flex;justify-content:center;align-items:center;gap:48px;flex-wrap:wrap;opacity:.35}
+.logos span{font-size:1.1rem;font-weight:700;letter-spacing:.05em;color:var(--text-dim)}
+
+/* SECTIONS COMMON */
+section{padding:100px 0}
+.section-label{display:inline-block;font-size:.75rem;text-transform:uppercase;letter-spacing:.15em;color:var(--blue);font-weight:600;margin-bottom:12px}
+.section-title{font-size:clamp(1.8rem,4vw,2.8rem);font-weight:800;letter-spacing:-.02em;margin-bottom:16px}
+.section-sub{color:var(--text-dim);max-width:600px;font-size:1.05rem;line-height:1.7}
+
+/* WHY CLAWHQ */
+.why{background:var(--bg)}
+.why .container{display:grid;grid-template-columns:1fr 1fr;gap:80px;align-items:center}
+.why-list{display:flex;flex-direction:column;gap:20px}
+.why-item{display:flex;gap:16px;padding:16px;border-radius:var(--radius);transition:background .2s}
+.why-item:hover{background:rgba(59,130,246,.05)}
+.why-icon{flex-shrink:0;width:40px;height:40px;display:flex;align-items:center;justify-content:center;border-radius:10px;background:rgba(59,130,246,.1);color:var(--blue);font-size:1.1rem}
+.why-item h3{font-size:1rem;font-weight:700;margin-bottom:2px}
+.why-item p{font-size:.88rem;color:var(--text-dim);line-height:1.5}
+
+/* FEATURES */
+.features{background:var(--bg2)}
+.features .container{text-align:center}
+.feature-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:20px;margin-top:48px}
+.feature-card{background:var(--bg3);border:1px solid rgba(255,255,255,.06);border-radius:var(--radius-lg);padding:32px 24px;text-align:left;transition:all .3s}
+.feature-card:hover{border-color:rgba(59,130,246,.25);transform:translateY(-4px);box-shadow:0 20px 40px rgba(0,0,0,.3)}
+.feature-card .icon{font-size:2rem;margin-bottom:16px;display:block}
+.feature-card h3{font-size:1.05rem;font-weight:700;margin-bottom:6px}
+.feature-card p{font-size:.85rem;color:var(--text-dim);line-height:1.6}
+
+/* HOW IT WORKS */
+.how{background:var(--bg)}
+.how .container{text-align:center}
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:32px;margin-top:48px;position:relative}
+.steps::before{content:'';position:absolute;top:60px;left:16%;right:16%;height:2px;background:linear-gradient(90deg,transparent,var(--blue),var(--gold),transparent);opacity:.3}
+.step{position:relative;text-align:center;padding:24px}
+.step-num{width:56px;height:56px;margin:0 auto 20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.3rem;font-weight:800;background:linear-gradient(135deg,var(--blue),#6366f1);color:#fff;position:relative;z-index:1}
+.step h3{font-size:1.1rem;font-weight:700;margin-bottom:8px}
+.step p{font-size:.9rem;color:var(--text-dim);line-height:1.6}
+
+/* PRICING */
+.pricing{background:var(--bg2)}
+.pricing .container{text-align:center}
+.pricing-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:20px;margin-top:48px;align-items:start}
+.price-card{background:var(--bg3);border:1px solid rgba(255,255,255,.06);border-radius:var(--radius-lg);padding:36px 28px;text-align:left;position:relative;transition:all .3s}
+.price-card:hover{transform:translateY(-4px)}
+.price-card.popular{border-color:var(--blue);box-shadow:0 0 40px rgba(59,130,246,.15)}
+.price-card.popular::before{content:'MOST POPULAR';position:absolute;top:-12px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,var(--blue),#6366f1);color:#fff;font-size:.65rem;font-weight:700;padding:4px 14px;border-radius:999px;letter-spacing:.08em}
+.price-card h3{font-size:1.1rem;font-weight:700;margin-bottom:4px}
+.price-card .price{font-size:2.5rem;font-weight:800;margin:12px 0 4px}
+.price-card .price span{font-size:.9rem;font-weight:400;color:var(--text-dim)}
+.price-card .desc{font-size:.8rem;color:var(--text-dim);margin-bottom:20px}
+.price-card ul{list-style:none;margin-bottom:24px}
+.price-card li{font-size:.85rem;padding:6px 0;color:var(--text-dim);display:flex;align-items:center;gap:8px}
+.price-card li::before{content:'✓';color:var(--blue);font-weight:700;font-size:.8rem}
+.price-card .btn{width:100%;text-align:center}
+
+/* CTA */
+.cta{background:var(--bg);position:relative;overflow:hidden}
+.cta-glow{position:absolute;inset:0;background:radial-gradient(ellipse 60% 50% at 50% 50%,rgba(59,130,246,.08),transparent)}
+.cta .container{position:relative;text-align:center;max-width:640px}
+.cta h2{font-size:clamp(1.8rem,4vw,2.8rem);font-weight:800;margin-bottom:16px;letter-spacing:-.02em}
+.cta p{color:var(--text-dim);margin-bottom:32px;font-size:1.05rem}
+.cta-form{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+.cta-form input{flex:1;min-width:240px;padding:14px 20px;border-radius:8px;border:1px solid rgba(255,255,255,.12);background:var(--bg3);color:#fff;font-size:1rem;outline:none;transition:border-color .2s}
+.cta-form input:focus{border-color:var(--blue)}
+
+/* FOOTER */
+footer{background:var(--bg2);border-top:1px solid rgba(255,255,255,.05);padding:48px 0 24px}
+.footer-top{display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:40px;margin-bottom:40px}
+.footer-brand p{color:var(--text-dim);font-size:.85rem;margin-top:8px;line-height:1.6}
+.footer-col h4{font-size:.8rem;text-transform:uppercase;letter-spacing:.1em;color:var(--text-dim);margin-bottom:12px}
+.footer-col a{display:block;font-size:.88rem;color:var(--text-dim);padding:4px 0;transition:color .2s}
+.footer-col a:hover{color:var(--white)}
+.footer-bottom{text-align:center;padding-top:24px;border-top:1px solid rgba(255,255,255,.05);color:var(--text-dim);font-size:.8rem}
+
+/* SCROLL ANIMATIONS */
+.reveal{opacity:0;transform:translateY(30px);transition:all .6s cubic-bezier(.16,1,.3,1)}
+.reveal.visible{opacity:1;transform:translateY(0)}
+
+/* RESPONSIVE */
+@media(max-width:1024px){
+  .feature-grid,.pricing-grid{grid-template-columns:repeat(2,1fr)}
+  .footer-top{grid-template-columns:1fr 1fr}
+}
+@media(max-width:768px){
+  .nav-links{display:none}
+  .nav-links.open{display:flex;flex-direction:column;position:absolute;top:64px;left:0;right:0;background:rgba(6,10,20,.95);backdrop-filter:blur(20px);padding:24px;gap:16px;border-bottom:1px solid rgba(255,255,255,.05)}
+  .mobile-menu{display:block}
+  .why .container{grid-template-columns:1fr}
+  .feature-grid{grid-template-columns:1fr}
+  .steps{grid-template-columns:1fr;gap:16px}
+  .steps::before{display:none}
+  .pricing-grid{grid-template-columns:1fr}
+  .footer-top{grid-template-columns:1fr}
+  .hero-btns{flex-direction:column;align-items:center}
+}
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav id="nav">
+  <div class="container">
+    <a href="#" class="logo"><span>ClawHQ</span><span>.dev</span></a>
+    <div class="nav-links" id="navLinks">
+      <a href="#why">Why ClawHQ</a>
+      <a href="#features">Features</a>
+      <a href="#pricing">Pricing</a>
+      <a href="#waitlist" class="btn btn-primary" style="padding:8px 20px">Get Started Free</a>
+    </div>
+    <button class="mobile-menu" id="mobileMenu" aria-label="Menu">☰</button>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="hero-bg"></div>
+  <div class="hero-grid"></div>
+  <div class="hero-content">
+    <div class="hero-badge">Now in Public Beta</div>
+    <h1>Your <span class="gradient">AI Command</span> Center</h1>
+    <p>Deploy powerful AI agents in 30 seconds. No coding required. One platform for every channel, every model, every team.</p>
+    <div class="hero-btns">
+      <a href="#waitlist" class="btn btn-primary" style="padding:14px 32px;font-size:1rem">Get Started Free →</a>
+      <a href="#how" class="btn btn-outline" style="padding:14px 32px;font-size:1rem">▶ Watch Demo</a>
+    </div>
+  </div>
+</section>
+
+<!-- SOCIAL PROOF -->
+<section class="social-proof">
+  <div class="container">
+    <p>Trusted by 500+ businesses worldwide</p>
+    <div class="logos">
+      <span>ACME AI</span><span>NEXUS</span><span>VORTEX</span><span>SYNTH CO</span><span>OMNI LABS</span>
+    </div>
+  </div>
+</section>
+
+<!-- WHY -->
+<section class="why" id="why">
+  <div class="container">
+    <div class="reveal">
+      <span class="section-label">The ClawHQ Advantage</span>
+      <h2 class="section-title">Why teams choose ClawHQ</h2>
+      <p class="section-sub">Everything you need to deploy, manage, and scale AI agents — without the complexity.</p>
+    </div>
+    <div class="why-list reveal">
+      <div class="why-item"><div class="why-icon">⚡</div><div><h3>One-Click Deploy</h3><p>Go from zero to live AI agent in 30 seconds. No DevOps, no infrastructure, no headaches.</p></div></div>
+      <div class="why-item"><div class="why-icon">📱</div><div><h3>Every Channel, One Platform</h3><p>Telegram, WhatsApp, Discord, Slack, Teams, iMessage — deploy once, reach everywhere.</p></div></div>
+      <div class="why-item"><div class="why-icon">🏷️</div><div><h3>White-Label Ready</h3><p>Your brand, your domain, your AI. Full white-label with zero "powered by" footprints.</p></div></div>
+      <div class="why-item"><div class="why-icon">💳</div><div><h3>Bundled API Access</h3><p>No BYOK headaches. All models included with one predictable monthly bill.</p></div></div>
+      <div class="why-item"><div class="why-icon">🤖</div><div><h3>Multi-Agent Teams</h3><p>Run entire fleets of specialized AI agents that work together seamlessly.</p></div></div>
+      <div class="why-item"><div class="why-icon">🏢</div><div><h3>Enterprise-Ready</h3><p>SSO, audit logs, budget controls, and compliance built in from day one.</p></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- FEATURES -->
+<section class="features" id="features">
+  <div class="container">
+    <div class="reveal">
+      <span class="section-label">Features</span>
+      <h2 class="section-title">Everything you need, nothing you don't</h2>
+    </div>
+    <div class="feature-grid">
+      <div class="feature-card reveal"><span class="icon">🚀</span><h3>30-Second Deploy</h3><p>From signup to live agent in under a minute. The fastest way to ship AI.</p></div>
+      <div class="feature-card reveal"><span class="icon">🔌</span><h3>10+ AI Models</h3><p>Claude, GPT, Gemini, DeepSeek, Grok — switch models with one click.</p></div>
+      <div class="feature-card reveal"><span class="icon">📱</span><h3>6+ Channels</h3><p>Telegram, WhatsApp, Discord, Slack, Teams, iMessage. One agent, everywhere.</p></div>
+      <div class="feature-card reveal"><span class="icon">🏷️</span><h3>White-Label Ready</h3><p>Custom domains, branding, and complete removal of ClawHQ references.</p></div>
+      <div class="feature-card reveal"><span class="icon">👥</span><h3>Team Management</h3><p>Roles, permissions, and collaboration tools for your entire organization.</p></div>
+      <div class="feature-card reveal"><span class="icon">💰</span><h3>Budget Controls</h3><p>Set spending limits, track costs per agent, and never get surprised by a bill.</p></div>
+      <div class="feature-card reveal"><span class="icon">🔒</span><h3>Enterprise Security</h3><p>SSO, SOC 2 compliance, audit logs, and data encryption at rest and in transit.</p></div>
+      <div class="feature-card reveal"><span class="icon">📊</span><h3>Usage Dashboard</h3><p>Real-time analytics, conversation logs, and performance metrics at a glance.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- HOW IT WORKS -->
+<section class="how" id="how">
+  <div class="container">
+    <div class="reveal">
+      <span class="section-label">How It Works</span>
+      <h2 class="section-title">Three steps. That's it.</h2>
+    </div>
+    <div class="steps">
+      <div class="step reveal"><div class="step-num">1</div><h3>Sign Up</h3><p>Create your free account in seconds. No credit card required.</p></div>
+      <div class="step reveal"><div class="step-num">2</div><h3>Choose Your Model</h3><p>Pick from Claude, GPT, Gemini, and more. Configure your agent's personality.</p></div>
+      <div class="step reveal"><div class="step-num">3</div><h3>Deploy</h3><p>Connect your channels and go live. Your AI agent is ready to work.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- PRICING -->
+<section class="pricing" id="pricing">
+  <div class="container">
+    <div class="reveal">
+      <span class="section-label">Pricing</span>
+      <h2 class="section-title">Simple, transparent pricing</h2>
+      <p class="section-sub" style="margin:0 auto 0">Start free. Scale when you're ready.</p>
+    </div>
+    <div class="pricing-grid">
+      <div class="price-card reveal">
+        <h3>Free</h3>
+        <div class="price">$0<span>/mo</span></div>
+        <div class="desc">Perfect for trying things out</div>
+        <ul>
+          <li>1 AI agent</li>
+          <li>1 channel</li>
+          <li>100 messages/day</li>
+          <li>Community support</li>
+        </ul>
+        <a href="#waitlist" class="btn btn-outline" style="width:100%">Get Started</a>
+      </div>
+      <div class="price-card popular reveal">
+        <h3>Pro</h3>
+        <div class="price">$19<span>/mo</span></div>
+        <div class="desc">For individuals and small teams</div>
+        <ul>
+          <li>3 AI agents</li>
+          <li>All channels</li>
+          <li>5,000 messages/day</li>
+          <li>Priority support</li>
+          <li>All AI models</li>
+        </ul>
+        <a href="#waitlist" class="btn btn-primary" style="width:100%">Get Started</a>
+      </div>
+      <div class="price-card reveal">
+        <h3>Business</h3>
+        <div class="price">$49<span>/mo</span></div>
+        <div class="desc">For growing teams</div>
+        <ul>
+          <li>10 AI agents</li>
+          <li>White-label</li>
+          <li>25,000 messages/day</li>
+          <li>SSO & audit logs</li>
+          <li>Dedicated support</li>
+        </ul>
+        <a href="#waitlist" class="btn btn-outline" style="width:100%">Get Started</a>
+      </div>
+      <div class="price-card reveal">
+        <h3>Enterprise</h3>
+        <div class="price">Custom</div>
+        <div class="desc">For large organizations</div>
+        <ul>
+          <li>Unlimited agents</li>
+          <li>Custom SLA</li>
+          <li>Dedicated infrastructure</li>
+          <li>Custom integrations</li>
+          <li>Dedicated account manager</li>
+        </ul>
+        <a href="#waitlist" class="btn btn-outline" style="width:100%">Contact Sales</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CTA -->
+<section class="cta" id="waitlist">
+  <div class="cta-glow"></div>
+  <div class="container">
+    <div class="reveal">
+      <h2>Ready to command your <span class="gradient">AI fleet</span>?</h2>
+      <p>Join the waitlist and be the first to deploy your AI agents with ClawHQ.</p>
+      <form class="cta-form" onsubmit="event.preventDefault();this.querySelector('button').textContent='You\'re in! 🎉';this.querySelector('input').disabled=true">
+        <input type="email" placeholder="Enter your email" required>
+        <button type="submit" class="btn btn-gold" style="padding:14px 32px">Join Waitlist →</button>
+      </form>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div class="container">
+    <div class="footer-top">
+      <div class="footer-brand">
+        <div class="logo"><span>ClawHQ</span><span>.dev</span></div>
+        <p>Your AI Command Center. Deploy powerful AI agents across every channel in seconds.</p>
+      </div>
+      <div class="footer-col"><h4>Product</h4><a href="#features">Features</a><a href="#pricing">Pricing</a><a href="#how">How It Works</a><a href="#">Changelog</a></div>
+      <div class="footer-col"><h4>Company</h4><a href="#">About</a><a href="#">Blog</a><a href="#">Careers</a><a href="#">Contact</a></div>
+      <div class="footer-col"><h4>Legal</h4><a href="#">Privacy</a><a href="#">Terms</a><a href="#">Security</a></div>
+    </div>
+    <div class="footer-bottom">© 2026 ClawHQ. All rights reserved.</div>
+  </div>
+</footer>
+
+<script>
+// Nav scroll
+const nav=document.getElementById('nav');
+window.addEventListener('scroll',()=>nav.classList.toggle('scrolled',window.scrollY>50));
+
+// Mobile menu
+document.getElementById('mobileMenu').addEventListener('click',()=>document.getElementById('navLinks').classList.toggle('open'));
+
+// Reveal on scroll
+const observer=new IntersectionObserver((entries)=>{entries.forEach(e=>{if(e.isIntersecting){e.target.classList.add('visible');observer.unobserve(e.target)}})},{threshold:.15});
+document.querySelectorAll('.reveal').forEach(el=>observer.observe(el));
+</script>
+</body>
+</html>

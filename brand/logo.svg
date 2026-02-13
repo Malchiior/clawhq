@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 50" fill="none">
+  <defs>
+    <linearGradient id="logoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#3b82f6"/>
+      <stop offset="100%" style="stop-color:#8b5cf6"/>
+    </linearGradient>
+  </defs>
+  <!-- Claw icon -->
+  <path d="M8 35 Q12 10 20 18 Q15 28 18 35" stroke="url(#logoGrad)" stroke-width="3" fill="none" stroke-linecap="round"/>
+  <path d="M16 35 Q20 8 28 16 Q23 26 26 35" stroke="url(#logoGrad)" stroke-width="3" fill="none" stroke-linecap="round"/>
+  <path d="M24 35 Q28 10 36 18 Q31 28 34 35" stroke="url(#logoGrad)" stroke-width="3" fill="none" stroke-linecap="round"/>
+  <!-- Text -->
+  <text x="46" y="36" font-family="system-ui, -apple-system, sans-serif" font-weight="800" font-size="28" fill="#f9fafb">Claw</text>
+  <text x="114" y="36" font-family="system-ui, -apple-system, sans-serif" font-weight="800" font-size="28" fill="url(#logoGrad)">HQ</text>
+</svg>

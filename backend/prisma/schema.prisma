@@ -1,0 +1,144 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  passwordHash  String?
+  name          String?
+  avatarUrl     String?
+  googleId      String?   @unique
+  plan          String    @default("free")
+  stripeCustomerId String?
+  stripeSubscriptionId String?
+  
+  businessName  String?
+  brandColor    String    @default("#3b82f6")
+  customDomain  String?
+  logoUrl       String?
+  
+  maxAgents     Int       @default(1)
+  maxChannels   Int       @default(1)
+  dailyMsgLimit Int       @default(100)
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  agents        Agent[]
+  channels      Channel[]
+  apiKeys       ApiKey[]
+  usageRecords  UsageRecord[]
+}
+
+model Agent {
+  id            String      @id @default(cuid())
+  name          String
+  model         String      @default("claude-sonnet-4-20250514")
+  status        AgentStatus @default(STOPPED)
+  containerId   String?
+  
+  systemPrompt  String?
+  temperature   Float       @default(0.7)
+  maxTokens     Int         @default(4096)
+  
+  totalMessages Int         @default(0)
+  totalTokens   Int         @default(0)
+  lastActiveAt  DateTime?
+  
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  
+  userId        String
+  user          User        @relation(fields: [userId], references: [id])
+  channels      ChannelAgent[]
+  logs          AgentLog[]
+}
+
+model Channel {
+  id            String        @id @default(cuid())
+  type          ChannelType
+  config        Json
+  isActive      Boolean       @default(true)
+  
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  
+  userId        String
+  user          User          @relation(fields: [userId], references: [id])
+  agents        ChannelAgent[]
+}
+
+model ChannelAgent {
+  id        String   @id @default(cuid())
+  channelId String
+  agentId   String
+  channel   Channel  @relation(fields: [channelId], references: [id])
+  agent     Agent    @relation(fields: [agentId], references: [id])
+  
+  @@unique([channelId, agentId])
+}
+
+model AgentLog {
+  id        String   @id @default(cuid())
+  level     String   @default("info")
+  message   String
+  metadata  Json?
+  createdAt DateTime @default(now())
+  
+  agentId   String
+  agent     Agent    @relation(fields: [agentId], references: [id])
+}
+
+model ApiKey {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  name      String
+  lastUsed  DateTime?
+  createdAt DateTime @default(now())
+  
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+}
+
+model UsageRecord {
+  id            String   @id @default(cuid())
+  messages      Int      @default(0)
+  inputTokens   Int      @default(0)
+  outputTokens  Int      @default(0)
+  costUsd       Float    @default(0)
+  date          DateTime @default(now()) @db.Date
+  
+  userId        String
+  user          User     @relation(fields: [userId], references: [id])
+  
+  @@unique([userId, date])
+}
+
+model WaitlistEntry {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  createdAt DateTime @default(now())
+}
+
+enum AgentStatus {
+  RUNNING
+  STOPPED
+  STARTING
+  ERROR
+  DEPLOYING
+}
+
+enum ChannelType {
+  TELEGRAM
+  WHATSAPP
+  DISCORD
+  SLACK
+  IMESSAGE
+  TEAMS
+}
