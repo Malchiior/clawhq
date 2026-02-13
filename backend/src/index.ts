@@ -13,6 +13,7 @@ import channelRoutes from './routes/channels'
 import billingRoutes from './routes/billing'
 import userRoutes from './routes/users'
 import waitlistRoutes from './routes/waitlist'
+import webhookRoutes from './routes/webhooks'
 
 const app = express()
 const PORT = parseInt(process.env.PORT || '3001', 10)

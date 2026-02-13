@@ -25,9 +25,22 @@ export default function OnboardingPage() {
     { icon: Brain, title: 'AI Model', subtitle: 'Select your default model' },
   ]
 
-  const finish = () => {
-    // Would POST to /api/users/onboard
-    navigate('/dashboard')
+  const [saving, setSaving] = useState(false)
+
+  const finish = async () => {
+    setSaving(true)
+    try {
+      const { apiFetch } = await import('../lib/api')
+      await apiFetch('/api/users/onboard', {
+        method: 'POST',
+        body: JSON.stringify({ businessName, brandColor, defaultModel: model }),
+      })
+      navigate('/dashboard')
+    } catch {
+      navigate('/dashboard') // Continue even if onboard fails
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -117,8 +130,8 @@ export default function OnboardingPage() {
                 Next <ChevronRight className="w-4 h-4" />
               </button>
             ) : (
-              <button onClick={finish} className="flex items-center gap-1 bg-primary hover:bg-primary-hover text-white text-sm font-medium px-5 py-2 rounded-lg transition-colors">
-                <Sparkles className="w-4 h-4" /> Launch Dashboard
+              <button onClick={finish} disabled={saving} className="flex items-center gap-1 bg-primary hover:bg-primary-hover disabled:opacity-50 text-white text-sm font-medium px-5 py-2 rounded-lg transition-colors">
+                <Sparkles className="w-4 h-4" /> {saving ? 'Setting up...' : 'Launch Dashboard'}
               </button>
             )}
           </div>
