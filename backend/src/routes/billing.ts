@@ -81,6 +81,21 @@ router.post('/webhook', async (req: Request, res: Response) => {
   }
 })
 
+router.post('/portal', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const user = await prisma.user.findUnique({ where: { id: req.userId } })
+    if (!user?.stripeCustomerId) { res.status(400).json({ error: 'No billing account' }); return }
+
+    const session = await stripe.billingPortal.sessions.create({
+      customer: user.stripeCustomerId,
+      return_url: `${process.env.FRONTEND_URL}/billing`,
+    })
+    res.json({ url: session.url })
+  } catch {
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
 router.get('/subscription', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const user = await prisma.user.findUnique({ where: { id: req.userId } })

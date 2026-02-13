@@ -1,0 +1,20 @@
+{
+  "name": "ClawHQ Backend",
+  "deploy": {
+    "buildCommand": "npm run build",
+    "startCommand": "npm start",
+    "restartPolicyType": "on-failure",
+    "restartPolicyMaxRetries": 3
+  },
+  "environments": {
+    "production": {
+      "variables": {
+        "NODE_ENV": "production",
+        "PORT": "${{ PORT }}",
+        "DATABASE_URL": "${{ DATABASE_URL }}",
+        "JWT_SECRET": "${{ JWT_SECRET }}",
+        "FRONTEND_URL": "${{ FRONTEND_URL }}"
+      }
+    }
+  }
+}

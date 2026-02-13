@@ -332,10 +332,11 @@ footer{background:var(--bg2);border-top:1px solid rgba(255,255,255,.05);padding:
     <div class="reveal">
       <h2>Ready to command your <span class="gradient">AI fleet</span>?</h2>
       <p>Join the waitlist and be the first to deploy your AI agents with ClawHQ.</p>
-      <form class="cta-form" onsubmit="event.preventDefault();this.querySelector('button').textContent='You\'re in! 🎉';this.querySelector('input').disabled=true">
+      <form class="cta-form" onsubmit="handleWaitlistSubmit(event)">
         <input type="email" placeholder="Enter your email" required>
         <button type="submit" class="btn btn-gold" style="padding:14px 32px">Join Waitlist →</button>
       </form>
+      <div id="waitlist-message" style="margin-top:16px;font-weight:600;display:none"></div>
     </div>
   </div>
 </section>
@@ -367,6 +368,51 @@ document.getElementById('mobileMenu').addEventListener('click',()=>document.getE
 // Reveal on scroll
 const observer=new IntersectionObserver((entries)=>{entries.forEach(e=>{if(e.isIntersecting){e.target.classList.add('visible');observer.unobserve(e.target)}})},{threshold:.15});
 document.querySelectorAll('.reveal').forEach(el=>observer.observe(el));
+
+// Waitlist form submission
+async function handleWaitlistSubmit(event) {
+  event.preventDefault();
+  
+  const form = event.target;
+  const email = form.querySelector('input[type="email"]').value;
+  const button = form.querySelector('button');
+  const messageDiv = document.getElementById('waitlist-message');
+  
+  // Show loading state
+  const originalText = button.textContent;
+  button.textContent = 'Joining...';
+  button.disabled = true;
+  messageDiv.style.display = 'none';
+  
+  try {
+    const response = await fetch('RAILWAY_URL_PLACEHOLDER/api/waitlist', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ email })
+    });
+    
+    const data = await response.json();
+    
+    if (response.ok) {
+      button.textContent = 'You\'re in! 🎉';
+      messageDiv.textContent = 'Welcome to the waitlist! We\'ll be in touch soon.';
+      messageDiv.style.color = '#d4a017';
+      messageDiv.style.display = 'block';
+      form.querySelector('input').disabled = true;
+    } else {
+      throw new Error(data.error || 'Something went wrong');
+    }
+  } catch (error) {
+    button.textContent = originalText;
+    button.disabled = false;
+    messageDiv.textContent = 'Oops! Please try again.';
+    messageDiv.style.color = '#ef4444';
+    messageDiv.style.display = 'block';
+    console.error('Waitlist submission error:', error);
+  }
+}
 </script>
 </body>
 </html>

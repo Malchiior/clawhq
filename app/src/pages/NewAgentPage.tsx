@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { Bot, Brain, MessageSquare, Sliders, Rocket, ChevronRight, ChevronLeft } from 'lucide-react'
+import { Bot, Brain, MessageSquare, Sliders, Rocket, ChevronRight, ChevronLeft, Loader2 } from 'lucide-react'
+import { apiFetch } from '../lib/api'
 
 const models = [
   { id: 'claude-sonnet-4-20250514', name: 'Claude Sonnet', provider: 'Anthropic', speed: 'Fast', cost: '$$', badge: 'Recommended' },
@@ -20,7 +21,25 @@ export default function NewAgentPage() {
 
   const steps = ['Name', 'Model', 'Prompt', 'Config', 'Deploy']
 
-  const deploy = () => navigate('/agents')
+  const [deploying, setDeploying] = useState(false)
+  const [error, setError] = useState('')
+  const [maxTokens, setMaxTokens] = useState(4096)
+
+  const deploy = async () => {
+    setDeploying(true)
+    setError('')
+    try {
+      await apiFetch('/api/agents', {
+        method: 'POST',
+        body: JSON.stringify({ name: name || 'Unnamed Agent', model, systemPrompt, temperature, maxTokens }),
+      })
+      navigate('/agents')
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Deploy failed')
+    } finally {
+      setDeploying(false)
+    }
+  }
 
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="max-w-2xl mx-auto space-y-6">
@@ -102,8 +121,8 @@ export default function NewAgentPage() {
             </div>
             <div>
               <label className="text-sm font-medium text-text-secondary mb-1.5 block">Max Tokens</label>
-              <select className="w-full bg-navy/50 border border-border rounded-lg px-4 py-2.5 text-sm text-text focus:outline-none focus:border-primary/50">
-                <option>1024</option><option>2048</option><option selected>4096</option><option>8192</option><option>16384</option>
+              <select value={maxTokens} onChange={e => setMaxTokens(Number(e.target.value))} className="w-full bg-navy/50 border border-border rounded-lg px-4 py-2.5 text-sm text-text focus:outline-none focus:border-primary/50">
+                <option value={1024}>1024</option><option value={2048}>2048</option><option value={4096}>4096</option><option value={8192}>8192</option><option value={16384}>16384</option>
               </select>
             </div>
           </div>
@@ -116,6 +135,7 @@ export default function NewAgentPage() {
               <h2 className="text-xl font-bold text-text">Ready to Deploy</h2>
               <p className="text-sm text-text-secondary mt-1">Your agent will start in a Docker container</p>
             </div>
+            {error && <div className="mb-3 p-3 bg-error/10 border border-error/20 rounded-lg text-sm text-error">{error}</div>}
             <div className="bg-navy/50 border border-border rounded-lg p-4 text-left max-w-xs mx-auto space-y-2">
               <div className="flex justify-between text-sm"><span className="text-text-muted">Name</span><span className="text-text font-medium">{name || 'Unnamed'}</span></div>
               <div className="flex justify-between text-sm"><span className="text-text-muted">Model</span><span className="text-text font-medium">{models.find(m => m.id === model)?.name}</span></div>
@@ -133,8 +153,8 @@ export default function NewAgentPage() {
               Next <ChevronRight className="w-4 h-4" />
             </button>
           ) : (
-            <button onClick={deploy} className="flex items-center gap-1 bg-success hover:bg-success/80 text-white text-sm font-medium px-5 py-2 rounded-lg transition-colors">
-              <Rocket className="w-4 h-4" /> Deploy Agent
+            <button onClick={deploy} disabled={deploying} className="flex items-center gap-1 bg-success hover:bg-success/80 disabled:opacity-50 text-white text-sm font-medium px-5 py-2 rounded-lg transition-colors">
+              {deploying ? <><Loader2 className="w-4 h-4 animate-spin" /> Deploying...</> : <><Rocket className="w-4 h-4" /> Deploy Agent</>}
             </button>
           )}
         </div>
