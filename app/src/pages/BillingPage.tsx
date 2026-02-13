@@ -3,9 +3,9 @@ import { CreditCard, Check, ArrowUpRight, Download, Calendar } from 'lucide-reac
 
 const plans = [
   { id: 'free', name: 'Free', price: '$0', period: '/mo', features: ['1 agent', '1 channel', '100 msgs/day', 'Community support'], current: true },
-  { id: 'pro', name: 'Pro', price: '$29', period: '/mo', features: ['5 agents', '5 channels', '10K msgs/day', 'Priority support', 'Custom branding'], popular: true },
-  { id: 'business', name: 'Business', price: '$99', period: '/mo', features: ['25 agents', 'Unlimited channels', '100K msgs/day', 'Dedicated support', 'White-label', 'API access'] },
-  { id: 'enterprise', name: 'Enterprise', price: 'Custom', period: '', features: ['Unlimited agents', 'Unlimited everything', 'SLA guarantee', 'Custom integrations', 'On-premise option'] },
+  { id: 'pro', name: 'Pro', price: '$19', period: '/mo', features: ['3 agents', 'All channels', '5K msgs/day', 'Priority support', 'Custom branding'], popular: true },
+  { id: 'business', name: 'Business', price: '$49', period: '/mo', features: ['10 agents', 'All channels', '25K msgs/day', 'White-label', 'SSO & audit logs', 'API access'] },
+  { id: 'enterprise', name: 'Enterprise', price: 'Custom', period: '', features: ['Unlimited agents', 'Unlimited everything', 'SLA guarantee', 'Custom integrations', 'Dedicated support'] },
 ]
 
 const invoices = [
