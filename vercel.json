@@ -1,6 +1,13 @@
 {
-  "buildCommand": null,
-  "outputDirectory": "landing",
+  "buildCommand": "cd app && npm ci && npm run build",
+  "outputDirectory": "app/dist",
+  "installCommand": "cd app && npm ci",
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ],
   "headers": [
     {
       "source": "/(.*)",
