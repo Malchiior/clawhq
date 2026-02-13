@@ -6,7 +6,30 @@ import { authenticate, AuthRequest } from '../middleware/auth'
 const router = Router()
 router.use(authenticate)
 
-function paramId(req: AuthRequest): string { return paramId(req) as string }
+function paramId(req: AuthRequest): string { return req.params.id as string }
+
+router.post('/onboard', async (req: AuthRequest, res: Response) => {
+  try {
+    const { businessName, brandColor, defaultModel } = req.body
+    const user = await prisma.user.update({
+      where: { id: req.userId },
+      data: { businessName, brandColor },
+    })
+    // Create first agent with chosen model
+    if (defaultModel) {
+      await prisma.agent.create({
+        data: {
+          name: businessName ? `${businessName} Agent` : 'My First Agent',
+          model: defaultModel,
+          userId: req.userId!,
+        },
+      })
+    }
+    res.json({ user })
+  } catch {
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
 
 router.get('/profile', async (req: AuthRequest, res: Response) => {
   try {

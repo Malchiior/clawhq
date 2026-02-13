@@ -6,7 +6,7 @@ const router = Router()
 router.use(authenticate)
 
 function paramId(req: AuthRequest): string {
-  return paramId(req) as string
+  return req.params.id as string
 }
 
 router.get('/', async (req: AuthRequest, res: Response) => {
