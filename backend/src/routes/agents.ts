@@ -1,6 +1,7 @@
 import { Router, Response } from 'express'
 import prisma from '../lib/prisma'
 import { authenticate, AuthRequest } from '../middleware/auth'
+import dockerService, { ContainerConfig } from '../lib/docker'
 
 const router = Router()
 router.use(authenticate)

@@ -18,10 +18,14 @@ export default function LoginPage() {
     setError('')
     setLoading(true)
     try {
-      await login(email, password)
-      navigate('/dashboard')
-    } catch {
-      setError('Invalid email or password')
+      const result = await login(email, password)
+      if (result.needsVerification) {
+        setError('Please verify your email before logging in. Check your inbox.')
+      } else {
+        navigate('/dashboard')
+      }
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Invalid email or password')
     } finally {
       setLoading(false)
     }

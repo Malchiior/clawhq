@@ -9,6 +9,7 @@ export default function SignupPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
+  const [success, setSuccess] = useState('')
   const [loading, setLoading] = useState(false)
   const { signup, loginWithGoogle } = useAuth()
   const navigate = useNavigate()
@@ -16,12 +17,17 @@ export default function SignupPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
+    setSuccess('')
     setLoading(true)
     try {
-      await signup(email, password, name)
-      navigate('/onboarding')
-    } catch {
-      setError('Signup failed. Try again.')
+      const result = await signup(email, password, name)
+      if (result.needsVerification) {
+        setSuccess('Account created! Check your email to verify your account.')
+      } else {
+        navigate('/onboarding')
+      }
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Signup failed. Try again.')
     } finally {
       setLoading(false)
     }
@@ -51,6 +57,7 @@ export default function SignupPage() {
           </div>
 
           {error && <div className="mb-4 p-3 bg-error/10 border border-error/20 rounded-lg text-sm text-error">{error}</div>}
+          {success && <div className="mb-4 p-3 bg-success/10 border border-success/20 rounded-lg text-sm text-success">{success}</div>}
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
