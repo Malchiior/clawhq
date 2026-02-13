@@ -1,20 +1,6 @@
 {
-  "git": {
-    "deploymentEnabled": {
-      "main": true
-    }
-  },
-  "public": true,
-  "rewrites": [
-    {
-      "source": "/app/(.*)",
-      "destination": "/app/index.html"
-    },
-    {
-      "source": "/api/(.*)",
-      "destination": "/backend/$1"
-    }
-  ],
+  "buildCommand": null,
+  "outputDirectory": "landing",
   "headers": [
     {
       "source": "/(.*)",

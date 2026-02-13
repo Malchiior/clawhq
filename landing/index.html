@@ -385,7 +385,7 @@ async function handleWaitlistSubmit(event) {
   messageDiv.style.display = 'none';
   
   try {
-    const response = await fetch('RAILWAY_URL_PLACEHOLDER/api/waitlist', {
+    const response = await fetch('/api/waitlist', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
