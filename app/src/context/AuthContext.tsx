@@ -28,18 +28,43 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
-  useEffect(() => {
+  const checkAuth = useCallback(async () => {
     const token = localStorage.getItem('clawhq_token')
     if (token) {
-      fetch(`${API_URL}/api/auth/me`, { headers: { Authorization: `Bearer ${token}` } })
-        .then(r => r.ok ? r.json() : Promise.reject())
-        .then(data => setUser(data.user))
-        .catch(() => localStorage.removeItem('clawhq_token'))
-        .finally(() => setIsLoading(false))
+      try {
+        const response = await fetch(`${API_URL}/api/auth/me`, { 
+          headers: { Authorization: `Bearer ${token}` } 
+        })
+        if (response.ok) {
+          const data = await response.json()
+          setUser(data.user)
+        } else {
+          localStorage.removeItem('clawhq_token')
+          setUser(null)
+        }
+      } catch (error) {
+        localStorage.removeItem('clawhq_token')
+        setUser(null)
+      }
     } else {
-      setIsLoading(false)
+      setUser(null)
     }
+    setIsLoading(false)
   }, [])
+
+  useEffect(() => {
+    checkAuth()
+
+    // Listen for storage events (for OAuth callback)
+    const handleStorageChange = () => {
+      checkAuth()
+    }
+    window.addEventListener('storage', handleStorageChange)
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange)
+    }
+  }, [checkAuth])
 
   const login = useCallback(async (email: string, password: string) => {
     const res = await fetch(`${API_URL}/api/auth/login`, {

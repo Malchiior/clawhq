@@ -2,6 +2,7 @@ import express from 'express'
 import cors from 'cors'
 import helmet from 'helmet'
 import dotenv from 'dotenv'
+import passport from './lib/passport'
 
 dotenv.config()
 
@@ -16,7 +17,13 @@ const app = express()
 const PORT = parseInt(process.env.PORT || '3001', 10)
 
 app.use(helmet())
-app.use(cors({ origin: process.env.FRONTEND_URL || 'http://localhost:5173', credentials: true }))
+app.use(cors({
+  origin: [process.env.FRONTEND_URL || 'http://localhost:5173', 'http://localhost:5173', 'https://clawhq.dev', 'https://clawhq-xi.vercel.app'],
+  credentials: true
+}))
+
+// Passport middleware
+app.use(passport.initialize())
 
 // Raw body for Stripe webhooks
 app.use('/api/billing/webhook', express.raw({ type: 'application/json' }))

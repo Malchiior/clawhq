@@ -3,9 +3,11 @@ import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import prisma from '../lib/prisma'
 import { authenticate, AuthRequest } from '../middleware/auth'
+import passport from '../lib/passport'
 
 const router = Router()
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret'
+const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173'
 
 function signToken(userId: string): string {
   return jwt.sign({ userId }, JWT_SECRET, { expiresIn: '7d' })
@@ -85,10 +87,31 @@ router.get('/me', authenticate, async (req: AuthRequest, res: Response) => {
   }
 })
 
-router.get('/google', (_req: Request, res: Response) => {
-  // TODO: Implement Google OAuth redirect
-  res.redirect(`https://accounts.google.com/o/oauth2/v2/auth?client_id=${process.env.GOOGLE_CLIENT_ID}&redirect_uri=${process.env.FRONTEND_URL}/auth/google/callback&response_type=code&scope=openid%20email%20profile`)
-})
+// Google OAuth routes
+router.get('/google', passport.authenticate('google', {
+  scope: ['profile', 'email']
+}))
+
+router.get('/google/callback', 
+  passport.authenticate('google', { session: false }),
+  (req: Request, res: Response) => {
+    try {
+      const user = req.user as any
+      if (!user) {
+        return res.redirect(`${FRONTEND_URL}/login?error=oauth_failed`)
+      }
+      
+      // Generate JWT token
+      const token = signToken(user.id)
+      
+      // Redirect to frontend with token
+      res.redirect(`${FRONTEND_URL}/auth/callback?token=${token}`)
+    } catch (error) {
+      console.error('Google OAuth callback error:', error)
+      res.redirect(`${FRONTEND_URL}/login?error=oauth_error`)
+    }
+  }
+)
 
 router.post('/forgot-password', async (req: Request, res: Response) => {
   // TODO: Implement password reset email
