@@ -27,6 +27,10 @@ model User {
   maxChannels   Int       @default(1)
   dailyMsgLimit Int       @default(100)
   
+  emailVerified Boolean   @default(false)
+  emailVerificationToken String?
+  emailVerificationExpires DateTime?
+  
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   
@@ -34,6 +38,23 @@ model User {
   channels      Channel[]
   apiKeys       ApiKey[]
   usageRecords  UsageRecord[]
+  sessions      Session[]
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  token        String   @unique
+  refreshToken String   @unique
+  expiresAt    DateTime
+  refreshExpiresAt DateTime
+  isRevoked    Boolean  @default(false)
+  userAgent    String?
+  ipAddress    String?
+  lastUsedAt   DateTime @default(now())
+  createdAt    DateTime @default(now())
+  
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Agent {

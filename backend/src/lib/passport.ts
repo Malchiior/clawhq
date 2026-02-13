@@ -26,19 +26,28 @@ passport.use(
         })
 
         if (user) {
-          // Update Google ID if not set
+          // Update Google ID if not set and mark email as verified
           if (!user.googleId) {
             user = await prisma.user.update({
               where: { id: user.id },
               data: { 
                 googleId: profile.id,
                 avatarUrl: profile.photos?.[0]?.value || user.avatarUrl,
-                name: user.name || profile.displayName
+                name: user.name || profile.displayName,
+                emailVerified: true, // OAuth emails are pre-verified
+                emailVerificationToken: null,
+                emailVerificationExpires: null
               }
+            })
+          } else if (!user.emailVerified) {
+            // Mark existing OAuth user as verified
+            user = await prisma.user.update({
+              where: { id: user.id },
+              data: { emailVerified: true }
             })
           }
         } else {
-          // Create new user
+          // Create new user with verified email
           user = await prisma.user.create({
             data: {
               email,
@@ -46,7 +55,8 @@ passport.use(
               name: profile.displayName,
               avatarUrl: profile.photos?.[0]?.value,
               plan: 'free',
-              brandColor: '#3B82F6' // Default blue
+              brandColor: '#3B82F6', // Default blue
+              emailVerified: true // OAuth emails are pre-verified
             }
           })
         }
