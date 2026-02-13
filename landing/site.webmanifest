@@ -1,0 +1,22 @@
+{
+  "name": "ClawHQ",
+  "short_name": "ClawHQ",
+  "description": "Deploy powerful AI agents in 30 seconds. No coding required.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#060a14",
+  "theme_color": "#3b82f6",
+  "icons": [
+    {
+      "src": "favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "apple-touch-icon.svg",
+      "sizes": "180x180",
+      "type": "image/svg+xml"
+    }
+  ]
+}
