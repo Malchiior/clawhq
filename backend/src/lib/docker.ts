@@ -2,6 +2,7 @@ import { exec } from 'child_process'
 import { promisify } from 'util'
 import { Agent } from '@prisma/client'
 import prisma from './prisma'
+import memoryService from './memory'
 
 const execAsync = promisify(exec)
 
@@ -73,25 +74,42 @@ class DockerService {
       // Generate OpenClaw configuration
       const openclawConfig = this.generateOpenClawConfig(config)
       
-      // Create a temporary config file (in production, this would be mounted as a volume)
-      const configPath = `/tmp/clawhq-${config.agentId}-config.json`
+      // Create persistent directories
+      const configPath = `/var/lib/clawhq/agents/${config.agentId}/config.json`
+      const memoryPath = `/var/lib/clawhq/agents/${config.agentId}/memory`
+      const workspacePath = `/var/lib/clawhq/agents/${config.agentId}/workspace`
       
-      // Write config to temporary file
+      // Ensure directories exist
+      await execAsync(`mkdir -p /var/lib/clawhq/agents/${config.agentId}`)
+      await execAsync(`mkdir -p ${memoryPath}`)
+      await execAsync(`mkdir -p ${workspacePath}`)
+      
+      // Write config to persistent file
       await execAsync(`echo '${openclawConfig.replace(/'/g, "'\\''")}' > ${configPath}`)
       
-      // Docker run command for OpenClaw agent
+      // Restore memory from latest snapshot (if exists)
+      try {
+        await this.restoreAgentMemory(config.agentId)
+      } catch (err) {
+        console.log(`No previous memory found for agent ${config.agentId}:`, err)
+      }
+      
+      // Docker run command for OpenClaw agent with persistent volumes
       const dockerCommand = [
         'docker', 'run',
         '-d', // detached
         '--name', containerName,
         '--restart', 'unless-stopped',
         '-v', `${configPath}:/app/config.json:ro`,
+        '-v', `${memoryPath}:/app/memory:rw`, // Persistent memory
+        '-v', `${workspacePath}:/app/workspace:rw`, // Persistent workspace
         '-e', `AGENT_ID=${config.agentId}`,
         '-e', `USER_ID=${config.userId}`,
         '-e', `CLAWHQ_WEBHOOK=http://host.docker.internal:3001/api/webhooks/agent`,
+        '-e', `CLAWHQ_MEMORY_BACKUP_INTERVAL=300`, // Backup memory every 5 minutes
         '--network', 'host',
         'openclaw/openclaw:latest', // Official OpenClaw image
-        'openclaw', 'agent', 'start', '--config', '/app/config.json'
+        'openclaw', 'agent', 'start', '--config', '/app/config.json', '--workspace', '/app/workspace'
       ].join(' ')
 
       const { stdout, stderr } = await execAsync(dockerCommand)
@@ -117,10 +135,19 @@ class DockerService {
         data: {
           agentId: config.agentId,
           level: 'info',
-          message: 'Agent container deployed successfully',
-          metadata: { containerId }
+          message: 'Agent container deployed successfully with persistent memory',
+          metadata: { containerId, memoryPath, workspacePath }
         }
       })
+
+      // Schedule initial memory backup after startup
+      setTimeout(async () => {
+        try {
+          await this.createMemorySnapshot(config.agentId, 'startup')
+        } catch (err) {
+          console.error(`Failed to create startup snapshot for ${config.agentId}:`, err)
+        }
+      }, 30000) // Wait 30 seconds for agent to initialize
 
       return containerId
     } catch (error) {
@@ -151,6 +178,13 @@ class DockerService {
     }
 
     try {
+      // Create memory snapshot before stopping
+      try {
+        await this.createMemorySnapshot(agentId, 'shutdown')
+      } catch (err) {
+        console.error(`Failed to create shutdown snapshot for ${agentId}:`, err)
+      }
+
       await execAsync(`docker stop ${agent.containerId}`)
       await execAsync(`docker rm ${agent.containerId}`)
       
@@ -166,7 +200,7 @@ class DockerService {
         data: {
           agentId,
           level: 'info',
-          message: 'Agent container stopped',
+          message: 'Agent container stopped with memory backup',
         }
       })
     } catch (error) {
@@ -237,6 +271,95 @@ class DockerService {
       return stdout
     } catch (error) {
       return `Failed to get logs: ${error}`
+    }
+  }
+
+  async getContainerStats(containerId: string): Promise<{
+    cpu_percent: number
+    memory_usage_mb: number
+    uptime_seconds: number
+  }> {
+    try {
+      // Get container stats (one-shot, not streaming)
+      const { stdout: statsOutput } = await execAsync(`docker stats --no-stream --format "{{.CPUPerc}},{{.MemUsage}}" ${containerId}`)
+      const [cpuStr, memStr] = statsOutput.trim().split(',')
+      
+      // Parse CPU percentage (remove % sign)
+      const cpu_percent = parseFloat(cpuStr.replace('%', '')) || 0
+      
+      // Parse memory usage (format: "123.4MiB / 1.234GiB")
+      const memUsagePart = memStr.split(' / ')[0]
+      let memory_usage_mb = 0
+      
+      if (memUsagePart.includes('MiB')) {
+        memory_usage_mb = parseFloat(memUsagePart.replace('MiB', '')) || 0
+      } else if (memUsagePart.includes('GiB')) {
+        memory_usage_mb = (parseFloat(memUsagePart.replace('GiB', '')) || 0) * 1024
+      } else if (memUsagePart.includes('MB')) {
+        memory_usage_mb = parseFloat(memUsagePart.replace('MB', '')) || 0
+      } else if (memUsagePart.includes('GB')) {
+        memory_usage_mb = (parseFloat(memUsagePart.replace('GB', '')) || 0) * 1000
+      }
+
+      // Get container uptime
+      const { stdout: inspectOutput } = await execAsync(`docker inspect --format='{{.State.StartedAt}}' ${containerId}`)
+      const startedAt = new Date(inspectOutput.trim())
+      const uptime_seconds = Math.floor((Date.now() - startedAt.getTime()) / 1000)
+
+      return {
+        cpu_percent,
+        memory_usage_mb,
+        uptime_seconds
+      }
+    } catch (error) {
+      console.error(`Failed to get container stats for ${containerId}:`, error)
+      return {
+        cpu_percent: 0,
+        memory_usage_mb: 0,
+        uptime_seconds: 0
+      }
+    }
+  }
+
+  private async createMemorySnapshot(agentId: string, snapshotType: string): Promise<void> {
+    try {
+      // Sync memory from filesystem first
+      await memoryService.syncFromFileSystem(agentId)
+      
+      // Create snapshot
+      await memoryService.createSnapshot(agentId, snapshotType, `Automatic ${snapshotType} backup`)
+      
+      // Cleanup old snapshots (keep last 10)
+      await memoryService.cleanupOldSnapshots(agentId, 10)
+      
+      console.log(`Created ${snapshotType} memory snapshot for agent ${agentId}`)
+    } catch (error) {
+      console.error(`Failed to create ${snapshotType} snapshot for agent ${agentId}:`, error)
+      throw error
+    }
+  }
+
+  private async restoreAgentMemory(agentId: string): Promise<void> {
+    try {
+      // Get the most recent snapshot
+      const snapshots = await memoryService.getSnapshots(agentId, 1)
+      
+      if (snapshots.length > 0) {
+        const latestSnapshot = snapshots[0]
+        
+        // Restore from snapshot
+        await memoryService.restoreFromSnapshot(agentId, latestSnapshot.id)
+        
+        // Sync to filesystem
+        await memoryService.syncToFileSystem(agentId)
+        
+        console.log(`Restored agent ${agentId} memory from snapshot ${latestSnapshot.id} (${latestSnapshot.snapshotType})`)
+      } else {
+        console.log(`No memory snapshots found for agent ${agentId} - starting with clean slate`)
+      }
+    } catch (error) {
+      console.error(`Failed to restore memory for agent ${agentId}:`, error)
+      throw error
     }
   }
 }

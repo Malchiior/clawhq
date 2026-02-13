@@ -19,6 +19,23 @@ router.get('/', async (req: AuthRequest, res: Response) => {
   }
 })
 
+router.get('/:id', async (req: AuthRequest, res: Response) => {
+  try {
+    const channel = await prisma.channel.findFirst({
+      where: { id: paramId(req), userId: req.userId },
+      include: { agents: { include: { agent: true } } },
+    })
+    
+    if (!channel) {
+      return res.status(404).json({ error: 'Channel not found' })
+    }
+    
+    res.json({ channel })
+  } catch {
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
 router.post('/', async (req: AuthRequest, res: Response) => {
   try {
     const { type, config } = req.body
@@ -26,6 +43,24 @@ router.post('/', async (req: AuthRequest, res: Response) => {
       data: { type, config, userId: req.userId! },
     })
     res.status(201).json({ channel })
+  } catch {
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+router.put('/:id', async (req: AuthRequest, res: Response) => {
+  try {
+    const { config } = req.body
+    const channel = await prisma.channel.updateMany({
+      where: { id: paramId(req), userId: req.userId },
+      data: { config },
+    })
+    
+    if (channel.count === 0) {
+      return res.status(404).json({ error: 'Channel not found' })
+    }
+    
+    res.json({ success: true })
   } catch {
     res.status(500).json({ error: 'Internal server error' })
   }
@@ -55,7 +90,7 @@ router.post('/:id/pair', async (req: AuthRequest, res: Response) => {
 router.delete('/:id/pair/:agentId', async (req: AuthRequest, res: Response) => {
   try {
     await prisma.channelAgent.deleteMany({
-      where: { channelId: paramId(req), agentId: (req.params.agentId as string) },
+      where: { channelId: paramId(req), agentId: req.params.agentId as string },
     })
     res.json({ success: true })
   } catch {

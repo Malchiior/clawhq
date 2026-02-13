@@ -10,10 +10,18 @@ dotenv.config()
 import authRoutes from './routes/auth'
 import agentRoutes from './routes/agents'
 import channelRoutes from './routes/channels'
+import telegramRoutes from './routes/telegram'
+import whatsappRoutes from './routes/whatsapp'
+import discordRoutes from './routes/discord'
 import billingRoutes from './routes/billing'
 import userRoutes from './routes/users'
 import waitlistRoutes from './routes/waitlist'
 import webhookRoutes from './routes/webhooks'
+import healthRoutes from './routes/health'
+import apiKeyRoutes from './routes/api-keys'
+import bundledApiRoutes from './routes/bundled-api'
+import memoryRoutes from './routes/memory'
+import healthMonitor from './lib/health-monitor'
 
 const app = express()
 const PORT = parseInt(process.env.PORT || '3001', 10)
@@ -35,9 +43,17 @@ app.use(express.json())
 app.use('/api/auth', authRoutes)
 app.use('/api/agents', agentRoutes)
 app.use('/api/channels', channelRoutes)
+app.use('/api/telegram', telegramRoutes)
+app.use('/api/whatsapp', whatsappRoutes)
+app.use('/api/discord', discordRoutes)
 app.use('/api/billing', billingRoutes)
 app.use('/api/users', userRoutes)
 app.use('/api/waitlist', waitlistRoutes)
+app.use('/api/webhooks', webhookRoutes)
+app.use('/api/health', healthRoutes)
+app.use('/api/api-keys', apiKeyRoutes)
+app.use('/api/bundled-api', bundledApiRoutes)
+app.use('/api/memory', memoryRoutes)
 
 // Health check
 app.get('/api/health', (_req, res) => {
@@ -65,9 +81,30 @@ setInterval(async () => {
   }
 }, 30 * 60 * 1000) // 30 minutes
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`🚀 ClawHQ API running on port ${PORT}`)
   console.log(`🔐 JWT Session management enabled`)
+  
+  // Start health monitoring service
+  try {
+    await healthMonitor.start()
+    console.log(`🔍 Health monitoring service started`)
+  } catch (error) {
+    console.error(`❌ Failed to start health monitoring service:`, error)
+  }
+})
+
+// Graceful shutdown
+process.on('SIGTERM', () => {
+  console.log('🛑 Received SIGTERM, shutting down gracefully...')
+  healthMonitor.stop()
+  process.exit(0)
+})
+
+process.on('SIGINT', () => {
+  console.log('🛑 Received SIGINT, shutting down gracefully...')
+  healthMonitor.stop()
+  process.exit(0)
 })
 
 export default app

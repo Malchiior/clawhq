@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { Bot, Plus, Play, Square, RotateCcw, MoreVertical, Search, Filter, Loader2 } from 'lucide-react'
+import { Bot, Plus, Play, Square, RotateCcw, MoreVertical, Search, Filter, Loader2, Zap, Clock } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { apiFetch } from '../lib/api'
 
@@ -47,20 +47,45 @@ export default function AgentsPage() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [actionLoading, setActionLoading] = useState<string | null>(null)
+  const [pollingInterval, setPollingInterval] = useState<number | null>(null)
+
+  const fetchAgents = async () => {
+    try {
+      const data = await apiFetch('/api/agents')
+      setAgents(data.agents)
+    } catch {
+      // Silent fail
+    }
+  }
 
   useEffect(() => {
-    apiFetch('/api/agents')
-      .then(data => setAgents(data.agents))
-      .catch(() => {})
-      .finally(() => setLoading(false))
-  }, [])
+    fetchAgents().finally(() => setLoading(false))
+    
+    // Poll every 3 seconds if there are agents in transitional states
+    const startPolling = () => {
+      const interval = setInterval(async () => {
+        const hasTransitionalAgents = agents.some(agent => 
+          ['DEPLOYING', 'STARTING', 'ERROR'].includes(agent.status)
+        )
+        if (hasTransitionalAgents) {
+          await fetchAgents()
+        }
+      }, 3000)
+      setPollingInterval(interval)
+    }
+
+    startPolling()
+    
+    return () => {
+      if (pollingInterval) clearInterval(pollingInterval)
+    }
+  }, [agents])
 
   const doAction = async (agentId: string, action: string) => {
     setActionLoading(agentId)
     try {
       await apiFetch(`/api/agents/${agentId}/${action}`, { method: 'POST' })
-      const data = await apiFetch('/api/agents')
-      setAgents(data.agents)
+      await fetchAgents()
     } catch { /* */ }
     setActionLoading(null)
   }
@@ -77,9 +102,17 @@ export default function AgentsPage() {
           <h1 className="text-2xl font-bold text-text">Agents</h1>
           <p className="text-sm text-text-secondary mt-1">Manage your AI agent fleet</p>
         </div>
-        <Link to="/agents/new" className="flex items-center gap-2 bg-primary hover:bg-primary-hover text-white text-sm font-medium px-4 py-2.5 rounded-lg transition-colors">
-          <Plus className="w-4 h-4" /> Deploy Agent
-        </Link>
+        <div className="flex items-center gap-3">
+          <Link to="/agents/quick-deploy" className="flex items-center gap-2 bg-primary hover:bg-primary-hover text-white text-sm font-medium px-4 py-2.5 rounded-lg transition-colors group">
+            <Zap className="w-4 h-4 group-hover:animate-pulse" /> Quick Deploy
+            <div className="flex items-center gap-1 text-xs bg-white/20 px-2 py-0.5 rounded">
+              <Clock className="w-3 h-3" /> 30s
+            </div>
+          </Link>
+          <Link to="/agents/new" className="flex items-center gap-2 bg-card border border-border hover:border-border-light text-text text-sm font-medium px-4 py-2.5 rounded-lg transition-colors">
+            <Plus className="w-4 h-4" /> Advanced
+          </Link>
+        </div>
       </div>
 
       <div className="flex items-center gap-3">
@@ -108,9 +141,14 @@ export default function AgentsPage() {
             {agents.length === 0 ? 'Deploy your first AI agent in 30 seconds.' : 'Try a different search term.'}
           </p>
           {agents.length === 0 && (
-            <Link to="/agents/new" className="inline-flex items-center gap-2 bg-primary hover:bg-primary-hover text-white text-sm font-medium px-4 py-2.5 rounded-lg transition-colors">
-              <Plus className="w-4 h-4" /> Deploy First Agent
-            </Link>
+            <div className="flex items-center gap-3 justify-center">
+              <Link to="/agents/quick-deploy" className="inline-flex items-center gap-2 bg-primary hover:bg-primary-hover text-white text-sm font-medium px-6 py-3 rounded-lg transition-colors">
+                <Zap className="w-4 h-4" /> Quick Deploy (30s)
+              </Link>
+              <Link to="/agents/new" className="inline-flex items-center gap-2 bg-card border border-border hover:border-border-light text-text text-sm font-medium px-4 py-3 rounded-lg transition-colors">
+                <Plus className="w-4 h-4" /> Advanced Setup
+              </Link>
+            </div>
           )}
         </div>
       ) : (

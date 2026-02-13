@@ -1,8 +1,10 @@
 import { useParams, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { Bot, Square, Play, RotateCcw, Settings, Terminal, Activity, MessageSquare, Zap, Clock, AlertCircle, CheckCircle, Info, Trash2, ArrowLeft, Loader2 } from 'lucide-react'
+import { Bot, Square, Play, RotateCcw, Settings, Terminal, Activity, MessageSquare, Zap, Clock, AlertCircle, CheckCircle, Info, Trash2, ArrowLeft, Loader2, Brain } from 'lucide-react'
 import { useState, useEffect, useCallback } from 'react'
 import { apiFetch } from '../lib/api'
+import HealthMonitor from '../components/HealthMonitor'
+import MemoryManager from '../components/MemoryManager'
 
 interface AgentLog {
   id: string
@@ -50,7 +52,7 @@ export default function AgentDetailPage() {
   const [logs, setLogs] = useState<AgentLog[]>([])
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
-  const [tab, setTab] = useState<'logs' | 'config' | 'metrics'>('logs')
+  const [tab, setTab] = useState<'logs' | 'config' | 'health' | 'memory'>('logs')
   const [configForm, setConfigForm] = useState({ systemPrompt: '', temperature: 0.7, maxTokens: 4096, name: '', model: '' })
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [deleteConfirm, setDeleteConfirm] = useState(false)
@@ -219,9 +221,12 @@ export default function AgentDetailPage() {
       {/* Tabs */}
       <div className="bg-card border border-border rounded-xl">
         <div className="flex border-b border-border">
-          {(['logs', 'config', 'metrics'] as const).map(t => (
+          {(['logs', 'config', 'health', 'memory'] as const).map(t => (
             <button key={t} onClick={() => setTab(t)} className={`px-5 py-3 text-sm font-medium transition-colors border-b-2 -mb-px ${tab === t ? 'border-primary text-primary' : 'border-transparent text-text-muted hover:text-text'}`}>
               {t === 'logs' && <Terminal className="w-4 h-4 inline mr-1.5 -mt-0.5" />}
+              {t === 'health' && <Activity className="w-4 h-4 inline mr-1.5 -mt-0.5" />}
+              {t === 'config' && <Settings className="w-4 h-4 inline mr-1.5 -mt-0.5" />}
+              {t === 'memory' && <Brain className="w-4 h-4 inline mr-1.5 -mt-0.5" />}
               {t.charAt(0).toUpperCase() + t.slice(1)}
             </button>
           ))}
@@ -302,30 +307,12 @@ export default function AgentDetailPage() {
             </div>
           )}
 
-          {tab === 'metrics' && (
-            <div className="space-y-6">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="bg-navy/50 border border-border rounded-lg p-4">
-                  <p className="text-xs text-text-muted mb-3">Messages (Last 7 days)</p>
-                  <div className="flex items-end gap-1 h-24">
-                    {[40, 65, 45, 80, 60, 90, 75].map((h, i) => (
-                      <div key={i} className="flex-1 bg-primary/30 hover:bg-primary/50 rounded-t transition-colors cursor-pointer" style={{ height: `${h}%` }} />
-                    ))}
-                  </div>
-                  <div className="flex justify-between text-[10px] text-text-muted mt-1"><span>Mon</span><span>Sun</span></div>
-                </div>
-                <div className="bg-navy/50 border border-border rounded-lg p-4">
-                  <p className="text-xs text-text-muted mb-3">Token Usage (Last 7 days)</p>
-                  <div className="flex items-end gap-1 h-24">
-                    {[55, 70, 50, 85, 65, 95, 80].map((h, i) => (
-                      <div key={i} className="flex-1 bg-accent/30 hover:bg-accent/50 rounded-t transition-colors cursor-pointer" style={{ height: `${h}%` }} />
-                    ))}
-                  </div>
-                  <div className="flex justify-between text-[10px] text-text-muted mt-1"><span>Mon</span><span>Sun</span></div>
-                </div>
-              </div>
-              <p className="text-xs text-text-muted text-center">Real-time metrics will be available once the agent processes messages.</p>
-            </div>
+          {tab === 'health' && (
+            <HealthMonitor agentId={agent.id} />
+          )}
+
+          {tab === 'memory' && (
+            <MemoryManager agentId={agent.id} />
           )}
         </div>
       </div>

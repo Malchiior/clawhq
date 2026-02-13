@@ -2,12 +2,33 @@ import { Router, Response } from 'express'
 import prisma from '../lib/prisma'
 import { authenticate, AuthRequest } from '../middleware/auth'
 import dockerService, { ContainerConfig } from '../lib/docker'
+import { getUserApiKeys } from './api-keys'
+import { bundledApiService } from '../lib/bundled-api'
 
 const router = Router()
 router.use(authenticate)
 
 function paramId(req: AuthRequest): string {
   return req.params.id as string
+}
+
+function getModelProvider(model: string): string | null {
+  if (model.startsWith('claude-') || model.includes('anthropic')) {
+    return 'anthropic'
+  }
+  if (model.startsWith('gpt-') || model.includes('openai')) {
+    return 'openai'
+  }
+  if (model.includes('gemini') || model.includes('google')) {
+    return 'google'
+  }
+  if (model.includes('deepseek')) {
+    return 'deepseek'
+  }
+  if (model.includes('grok')) {
+    return 'grok'
+  }
+  return null
 }
 
 router.get('/', async (req: AuthRequest, res: Response) => {
@@ -100,6 +121,65 @@ router.post('/:id/start', async (req: AuthRequest, res: Response) => {
       return
     }
 
+    // Determine which API keys to use based on user's preference
+    let apiKeys: Record<string, string | undefined>
+    if (agent.user.apiMode === 'byok') {
+      // Use user's own API keys
+      const userApiKeys = await getUserApiKeys(agent.userId)
+      apiKeys = {
+        openai: userApiKeys.openai,
+        anthropic: userApiKeys.anthropic,
+        google: userApiKeys.google,
+        deepseek: userApiKeys.deepseek,
+        grok: userApiKeys.grok,
+      }
+      
+      // Validate that user has the required API key for their selected model
+      const requiredProvider = getModelProvider(agent.model)
+      if (requiredProvider && !apiKeys[requiredProvider]) {
+        res.status(400).json({ 
+          error: `No ${requiredProvider.toUpperCase()} API key found. Please add your API key in Settings → API Keys.` 
+        })
+        return
+      }
+    } else {
+      // Use bundled API - check user limits and get available keys
+      const limitsCheck = await bundledApiService.checkUserLimits(agent.userId)
+      
+      if (!limitsCheck.canUse) {
+        res.status(429).json({ 
+          error: `Bundled API limit reached: ${limitsCheck.reason}`,
+          dailyUsage: limitsCheck.dailyUsage
+        })
+        return
+      }
+      
+      // Get required provider for the model
+      const requiredProvider = getModelProvider(agent.model)
+      if (!requiredProvider) {
+        res.status(400).json({ 
+          error: `Unsupported model: ${agent.model}` 
+        })
+        return
+      }
+      
+      // Get API key for the required provider
+      const bundledKey = await bundledApiService.getApiKey(requiredProvider)
+      if (!bundledKey) {
+        res.status(503).json({ 
+          error: `Bundled API for ${requiredProvider.toUpperCase()} is currently unavailable. Please try again later or switch to BYOK mode.` 
+        })
+        return
+      }
+      
+      apiKeys = {
+        [requiredProvider]: bundledKey,
+        // Include webhook URL for usage tracking
+        clawhq_webhook: `${process.env.API_BASE_URL}/api/bundled-api/record-usage`,
+        clawhq_user_id: agent.userId
+      }
+    }
+
     const config: ContainerConfig = {
       agentId: agent.id,
       userId: agent.userId,
@@ -107,12 +187,7 @@ router.post('/:id/start', async (req: AuthRequest, res: Response) => {
       systemPrompt: agent.systemPrompt || undefined,
       temperature: agent.temperature,
       maxTokens: agent.maxTokens,
-      apiKeys: {
-        // In production, these would come from user's API key settings
-        openai: process.env.OPENAI_API_KEY,
-        anthropic: process.env.ANTHROPIC_API_KEY,
-        gemini: process.env.GOOGLE_AI_API_KEY,
-      },
+      apiKeys,
       channels: agent.channels.map(ca => ({
         type: ca.channel.type,
         config: ca.channel.config as Record<string, any>
@@ -298,17 +373,72 @@ router.post('/deploy', async (req: AuthRequest, res: Response) => {
 
     const createdChannels = await Promise.all(channelPromises)
 
+    // Determine which API keys to use based on user's preference
+    let apiKeys: Record<string, string | undefined>
+    if (user && user.apiMode === 'byok') {
+      // Use user's own API keys
+      const userApiKeys = await getUserApiKeys(req.userId!)
+      apiKeys = {
+        openai: userApiKeys.openai,
+        anthropic: userApiKeys.anthropic,
+        google: userApiKeys.google,
+        deepseek: userApiKeys.deepseek,
+        grok: userApiKeys.grok,
+      }
+      
+      // Validate that user has the required API key for their selected model
+      const requiredProvider = getModelProvider(model)
+      if (requiredProvider && !apiKeys[requiredProvider]) {
+        res.status(400).json({ 
+          error: `No ${requiredProvider.toUpperCase()} API key found. Please add your API key in Settings → API Keys.` 
+        })
+        return
+      }
+    } else {
+      // Use bundled API - check user limits and get available keys
+      const limitsCheck = await bundledApiService.checkUserLimits(req.userId!)
+      
+      if (!limitsCheck.canUse) {
+        res.status(429).json({ 
+          error: `Bundled API limit reached: ${limitsCheck.reason}`,
+          dailyUsage: limitsCheck.dailyUsage
+        })
+        return
+      }
+      
+      // Get required provider for the model
+      const requiredProvider = getModelProvider(model)
+      if (!requiredProvider) {
+        res.status(400).json({ 
+          error: `Unsupported model: ${model}` 
+        })
+        return
+      }
+      
+      // Get API key for the required provider
+      const bundledKey = await bundledApiService.getApiKey(requiredProvider)
+      if (!bundledKey) {
+        res.status(503).json({ 
+          error: `Bundled API for ${requiredProvider.toUpperCase()} is currently unavailable. Please try again later or switch to BYOK mode.` 
+        })
+        return
+      }
+      
+      apiKeys = {
+        [requiredProvider]: bundledKey,
+        // Include webhook URL for usage tracking
+        clawhq_webhook: `${process.env.API_BASE_URL}/api/bundled-api/record-usage`,
+        clawhq_user_id: req.userId!
+      }
+    }
+
     // Deploy container
     const config: ContainerConfig = {
       agentId: agent.id,
       userId: agent.userId,
       model: agent.model,
       systemPrompt: agent.systemPrompt || undefined,
-      apiKeys: {
-        openai: process.env.OPENAI_API_KEY,
-        anthropic: process.env.ANTHROPIC_API_KEY,
-        gemini: process.env.GOOGLE_AI_API_KEY,
-      },
+      apiKeys,
       channels: createdChannels
     }
 

@@ -5,10 +5,28 @@ import { Bot, Brain, MessageSquare, Sliders, Rocket, ChevronRight, ChevronLeft, 
 import { apiFetch } from '../lib/api'
 
 const models = [
+  // Anthropic Claude Models
   { id: 'claude-sonnet-4-20250514', name: 'Claude Sonnet', provider: 'Anthropic', speed: 'Fast', cost: '$$', badge: 'Recommended' },
   { id: 'claude-opus-4-20250514', name: 'Claude Opus', provider: 'Anthropic', speed: 'Medium', cost: '$$$$', badge: 'Premium' },
+  { id: 'claude-haiku-4-20250514', name: 'Claude Haiku', provider: 'Anthropic', speed: 'Very Fast', cost: '$', badge: 'Budget' },
+  
+  // OpenAI GPT Models
   { id: 'gpt-4o', name: 'GPT-4o', provider: 'OpenAI', speed: 'Fast', cost: '$$$', badge: null },
   { id: 'gpt-4o-mini', name: 'GPT-4o Mini', provider: 'OpenAI', speed: 'Very Fast', cost: '$', badge: 'Budget' },
+  { id: 'gpt-4-turbo', name: 'GPT-4 Turbo', provider: 'OpenAI', speed: 'Medium', cost: '$$$', badge: null },
+  
+  // Google Gemini Models
+  { id: 'gemini-2.0-flash-exp', name: 'Gemini 2.0 Flash', provider: 'Google', speed: 'Very Fast', cost: '$', badge: 'New' },
+  { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro', provider: 'Google', speed: 'Fast', cost: '$$', badge: null },
+  { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash', provider: 'Google', speed: 'Very Fast', cost: '$', badge: 'Budget' },
+  
+  // DeepSeek Models
+  { id: 'deepseek-chat', name: 'DeepSeek Chat', provider: 'DeepSeek', speed: 'Fast', cost: '$', badge: 'Budget' },
+  { id: 'deepseek-reasoner', name: 'DeepSeek Reasoner', provider: 'DeepSeek', speed: 'Medium', cost: '$$', badge: 'Reasoning' },
+  
+  // xAI Grok Models
+  { id: 'grok-2-1212', name: 'Grok 2', provider: 'xAI', speed: 'Fast', cost: '$$', badge: null },
+  { id: 'grok-2-vision-1212', name: 'Grok 2 Vision', provider: 'xAI', speed: 'Medium', cost: '$$$', badge: 'Vision' },
 ]
 
 export default function NewAgentPage() {
@@ -29,10 +47,23 @@ export default function NewAgentPage() {
     setDeploying(true)
     setError('')
     try {
-      await apiFetch('/api/agents', {
+      // Create agent first
+      const agent = await apiFetch('/api/agents', {
         method: 'POST',
-        body: JSON.stringify({ name: name || 'Unnamed Agent', model, systemPrompt, temperature, maxTokens }),
+        body: JSON.stringify({ 
+          name: name || 'Unnamed Agent', 
+          model, 
+          systemPrompt, 
+          temperature, 
+          maxTokens 
+        }),
       })
+      
+      // Then start the container
+      await apiFetch(`/api/agents/${agent.agent.id}/start`, {
+        method: 'POST'
+      })
+      
       navigate('/agents')
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Deploy failed')
@@ -74,21 +105,28 @@ export default function NewAgentPage() {
               <div className="w-10 h-10 rounded-xl bg-primary/20 flex items-center justify-center"><Brain className="w-5 h-5 text-primary" /></div>
               <div><h2 className="text-lg font-semibold text-text">Choose AI Model</h2><p className="text-xs text-text-secondary">Select the brain behind your agent</p></div>
             </div>
-            <div className="space-y-2">
-              {models.map(m => (
-                <button key={m.id} onClick={() => setModel(m.id)} className={`w-full text-left p-4 rounded-lg border transition-all ${model === m.id ? 'border-primary bg-primary/5' : 'border-border hover:border-border-light'}`}>
-                  <div className="flex justify-between items-center">
-                    <div>
-                      <span className="font-medium text-text text-sm">{m.name}</span>
-                      <span className="text-xs text-text-muted ml-2">by {m.provider}</span>
-                    </div>
-                    <div className="flex gap-2">
-                      <span className="text-[10px] px-2 py-0.5 rounded bg-white/5 text-text-muted">{m.speed}</span>
-                      <span className="text-[10px] px-2 py-0.5 rounded bg-white/5 text-text-muted">{m.cost}</span>
-                      {m.badge && <span className="text-[10px] px-2 py-0.5 rounded bg-primary/20 text-primary">{m.badge}</span>}
-                    </div>
+            <div className="space-y-5">
+              {/* Group models by provider */}
+              {['Anthropic', 'OpenAI', 'Google', 'DeepSeek', 'xAI'].map(provider => (
+                <div key={provider} className="space-y-2">
+                  <h3 className="text-xs font-medium text-text-muted uppercase tracking-wide">{provider}</h3>
+                  <div className="space-y-2">
+                    {models.filter(m => m.provider === provider).map(m => (
+                      <button key={m.id} onClick={() => setModel(m.id)} className={`w-full text-left p-3 rounded-lg border transition-all ${model === m.id ? 'border-primary bg-primary/5' : 'border-border hover:border-border-light'}`}>
+                        <div className="flex justify-between items-center">
+                          <div>
+                            <span className="font-medium text-text text-sm">{m.name}</span>
+                          </div>
+                          <div className="flex gap-2">
+                            <span className="text-[10px] px-2 py-0.5 rounded bg-white/5 text-text-muted">{m.speed}</span>
+                            <span className="text-[10px] px-2 py-0.5 rounded bg-white/5 text-text-muted">{m.cost}</span>
+                            {m.badge && <span className="text-[10px] px-2 py-0.5 rounded bg-primary/20 text-primary">{m.badge}</span>}
+                          </div>
+                        </div>
+                      </button>
+                    ))}
                   </div>
-                </button>
+                </div>
               ))}
             </div>
           </div>

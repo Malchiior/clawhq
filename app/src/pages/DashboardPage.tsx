@@ -91,9 +91,14 @@ export default function DashboardPage() {
           <h1 className="text-2xl font-bold text-text">Dashboard</h1>
           <p className="text-sm text-text-secondary mt-1">Overview of your AI agent fleet</p>
         </div>
-        <Link to="/agents/new" className="flex items-center gap-2 bg-primary hover:bg-primary-hover text-white text-sm font-medium px-4 py-2.5 rounded-lg transition-colors">
-          <Plus className="w-4 h-4" /> Deploy Agent
-        </Link>
+        <div className="flex items-center gap-3">
+          <Link to="/agents/quick-deploy" className="flex items-center gap-2 bg-primary hover:bg-primary-hover text-white text-sm font-medium px-4 py-2.5 rounded-lg transition-colors">
+            <Zap className="w-4 h-4" /> Quick Deploy (30s)
+          </Link>
+          <Link to="/agents/new" className="flex items-center gap-2 bg-card border border-border hover:border-border-light text-text text-sm font-medium px-4 py-2.5 rounded-lg transition-colors">
+            <Plus className="w-4 h-4" /> Advanced
+          </Link>
+        </div>
       </div>
 
       {/* Stats */}
@@ -118,9 +123,14 @@ export default function DashboardPage() {
           </div>
           <h3 className="text-lg font-semibold text-text mb-2">Welcome to ClawHQ!</h3>
           <p className="text-sm text-text-secondary mb-6 max-w-md mx-auto">Deploy your first AI agent in 30 seconds. Connect it to Telegram, WhatsApp, Discord, or any channel.</p>
-          <Link to="/agents/new" className="inline-flex items-center gap-2 bg-primary hover:bg-primary-hover text-white text-sm font-medium px-4 py-2.5 rounded-lg transition-colors">
-            <Plus className="w-4 h-4" /> Deploy First Agent
-          </Link>
+          <div className="flex items-center gap-3 justify-center">
+            <Link to="/agents/quick-deploy" className="inline-flex items-center gap-2 bg-primary hover:bg-primary-hover text-white text-sm font-medium px-6 py-3 rounded-lg transition-colors">
+              <Zap className="w-4 h-4" /> Quick Deploy (30s)
+            </Link>
+            <Link to="/agents/new" className="inline-flex items-center gap-2 bg-card border border-border hover:border-border-light text-text text-sm font-medium px-4 py-3 rounded-lg transition-colors">
+              <Plus className="w-4 h-4" /> Advanced Setup
+            </Link>
+          </div>
         </motion.div>
       ) : (
         <div className="grid grid-cols-3 gap-6">

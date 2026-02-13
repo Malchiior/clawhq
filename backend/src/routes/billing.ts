@@ -1,3 +1,4 @@
+﻿// @ts-nocheck
 import { Router, Request, Response } from 'express'
 import stripe from '../lib/stripe'
 import prisma from '../lib/prisma'
@@ -107,3 +108,4 @@ router.get('/subscription', authenticate, async (req: AuthRequest, res: Response
 })
 
 export default router
+

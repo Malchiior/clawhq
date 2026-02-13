@@ -9,9 +9,11 @@ import DashboardPage from './pages/DashboardPage'
 import AgentsPage from './pages/AgentsPage'
 import NewAgentPage from './pages/NewAgentPage'
 import AgentDetailPage from './pages/AgentDetailPage'
+import QuickDeployPage from './pages/QuickDeployPage'
 import ChannelsPage from './pages/ChannelsPage'
 import BillingPage from './pages/BillingPage'
 import SettingsPage from './pages/SettingsPage'
+import ApiKeysPage from './pages/ApiKeysPage'
 import DocsPage from './pages/DocsPage'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -33,10 +35,12 @@ export default function App() {
         <Route path="dashboard" element={<DashboardPage />} />
         <Route path="agents" element={<AgentsPage />} />
         <Route path="agents/new" element={<NewAgentPage />} />
+        <Route path="agents/quick-deploy" element={<QuickDeployPage />} />
         <Route path="agents/:id" element={<AgentDetailPage />} />
         <Route path="channels" element={<ChannelsPage />} />
         <Route path="billing" element={<BillingPage />} />
         <Route path="settings" element={<SettingsPage />} />
+        <Route path="api-keys" element={<ApiKeysPage />} />
         <Route path="docs" element={<DocsPage />} />
       </Route>
     </Routes>

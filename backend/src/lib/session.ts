@@ -1,5 +1,6 @@
-import jwt from 'jsonwebtoken'
-import { v4 as uuidv4 } from 'uuid'
+﻿import jwt from 'jsonwebtoken'
+import crypto from 'crypto'
+const uuidv4 = () => crypto.randomUUID()
 import prisma from './prisma'
 
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret'

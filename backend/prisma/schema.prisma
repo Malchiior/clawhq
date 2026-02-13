@@ -23,6 +23,8 @@ model User {
   customDomain  String?
   logoUrl       String?
   
+  apiMode       String    @default("bundled") // "bundled" or "byok"
+  
   maxAgents     Int       @default(1)
   maxChannels   Int       @default(1)
   dailyMsgLimit Int       @default(100)
@@ -79,6 +81,8 @@ model Agent {
   user          User        @relation(fields: [userId], references: [id])
   channels      ChannelAgent[]
   logs          AgentLog[]
+  memories      AgentMemory[]
+  snapshots     AgentSnapshot[]
 }
 
 model Channel {
@@ -117,14 +121,19 @@ model AgentLog {
 }
 
 model ApiKey {
-  id        String   @id @default(cuid())
-  key       String   @unique
-  name      String
+  id        String      @id @default(cuid())
+  provider  ApiProvider
+  key       String      // Encrypted
+  name      String?
+  isActive  Boolean     @default(true)
   lastUsed  DateTime?
-  createdAt DateTime @default(now())
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
   
   userId    String
-  user      User     @relation(fields: [userId], references: [id])
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, provider])
 }
 
 model UsageRecord {
@@ -147,6 +156,52 @@ model WaitlistEntry {
   createdAt DateTime @default(now())
 }
 
+model BundledUsage {
+  id           String   @id @default(cuid())
+  provider     String
+  date         DateTime @db.Date
+  totalTokens  Int      @default(0)
+  costUsd      Float    @default(0)
+  requestCount Int      @default(0)
+  createdAt    DateTime @default(now())
+  
+  @@unique([provider, date])
+}
+
+model AgentMemory {
+  id        String   @id @default(cuid())
+  filePath  String   // Relative path in agent workspace (e.g., "MEMORY.md", "memory/2026-02-13.md")
+  content   String   // File content
+  fileSize  Int      @default(0)
+  checksum  String?  // MD5 hash for content verification
+  isActive  Boolean  @default(true) // False for deleted/archived files
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  agentId   String
+  agent     Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  
+  @@unique([agentId, filePath])
+  @@index([agentId, isActive])
+}
+
+model AgentSnapshot {
+  id          String   @id @default(cuid())
+  snapshotType String  @default("restart") // "restart", "manual", "scheduled"
+  description String?
+  memoryFiles Json     // Array of {filePath, content, checksum} objects
+  config      Json?    // Agent configuration at time of snapshot
+  metadata    Json?    // Additional metadata (memory size, file count, etc.)
+  
+  createdAt   DateTime @default(now())
+  
+  agentId     String
+  agent       Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  
+  @@index([agentId, createdAt])
+}
+
 enum AgentStatus {
   RUNNING
   STOPPED
@@ -162,4 +217,12 @@ enum ChannelType {
   SLACK
   IMESSAGE
   TEAMS
+}
+
+enum ApiProvider {
+  OPENAI
+  ANTHROPIC
+  GOOGLE
+  DEEPSEEK
+  GROK
 }

@@ -31,6 +31,16 @@ router.post('/onboard', async (req: AuthRequest, res: Response) => {
   }
 })
 
+router.get('/me', async (req: AuthRequest, res: Response) => {
+  try {
+    const user = await prisma.user.findUnique({ where: { id: req.userId } })
+    if (!user) { res.status(404).json({ error: 'User not found' }); return }
+    res.json({ user })
+  } catch {
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
 router.get('/profile', async (req: AuthRequest, res: Response) => {
   try {
     const user = await prisma.user.findUnique({ where: { id: req.userId } })
@@ -65,10 +75,14 @@ router.get('/api-keys', async (req: AuthRequest, res: Response) => {
 
 router.post('/api-keys', async (req: AuthRequest, res: Response) => {
   try {
-    const { name } = req.body
+    const { name, provider } = req.body
+    if (!provider) {
+      res.status(400).json({ error: 'Provider is required' })
+      return
+    }
     const key = `clw_${crypto.randomBytes(32).toString('hex')}`
     const apiKey = await prisma.apiKey.create({
-      data: { key, name: name || 'Unnamed Key', userId: req.userId! },
+      data: { key, name: name || 'Unnamed Key', provider, userId: req.userId! },
     })
     res.status(201).json({ apiKey: { ...apiKey, key } }) // Return full key only on creation
   } catch {

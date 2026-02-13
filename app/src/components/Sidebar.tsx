@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom'
-import { LayoutDashboard, Bot, Radio, CreditCard, Settings, BookOpen, Zap } from 'lucide-react'
+import { LayoutDashboard, Bot, Radio, CreditCard, Settings, BookOpen, Zap, Key } from 'lucide-react'
 import { motion } from 'framer-motion'
 
 const links = [
@@ -8,6 +8,7 @@ const links = [
   { to: '/channels', icon: Radio, label: 'Channels' },
   { to: '/billing', icon: CreditCard, label: 'Billing' },
   { to: '/settings', icon: Settings, label: 'Settings' },
+  { to: '/api-keys', icon: Key, label: 'API Keys' },
   { to: '/docs', icon: BookOpen, label: 'Docs' },
 ]
 

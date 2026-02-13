@@ -6,6 +6,7 @@ const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || ''
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || ''
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173'
 
+if (GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET) {
 passport.use(
   new GoogleStrategy(
     {
@@ -68,6 +69,9 @@ passport.use(
     }
   )
 )
+} else {
+  console.warn('Google OAuth disabled: GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET not set')
+}
 
 passport.serializeUser((user: any, done) => {
   done(null, user.id)

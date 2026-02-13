@@ -1,6 +1,7 @@
-import { Router, Request, Response } from 'express'
+﻿import { Router, Request, Response } from 'express'
 import bcrypt from 'bcryptjs'
-import { v4 as uuidv4 } from 'uuid'
+import crypto from 'crypto'
+const uuidv4 = () => crypto.randomUUID()
 import prisma from '../lib/prisma'
 import { authenticate, AuthRequest } from '../middleware/auth'
 import passport from '../lib/passport'
