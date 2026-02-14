@@ -11,7 +11,7 @@ router.get('/', async (req: AuthRequest, res: Response) => {
   try {
     const channels = await prisma.channel.findMany({
       where: { userId: req.userId },
-      include: { agents: { include: { agent: true } } },
+      include: { channelAgents: { include: { agent: true } } },
     })
     res.json({ channels })
   } catch {
@@ -23,7 +23,7 @@ router.get('/:id', async (req: AuthRequest, res: Response) => {
   try {
     const channel = await prisma.channel.findFirst({
       where: { id: paramId(req), userId: req.userId },
-      include: { agents: { include: { agent: true } } },
+      include: { channelAgents: { include: { agent: true } } },
     })
     
     if (!channel) {

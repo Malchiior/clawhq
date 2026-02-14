@@ -198,7 +198,7 @@ router.post('/webhook/:channelId', async (req, res) => {
     const channel = await prisma.channel.findFirst({
       where: { id: channelId, type: 'WHATSAPP' },
       include: { 
-        agents: { 
+        channelAgents: { 
           include: { 
             agent: { include: { user: true } } 
           } 
@@ -229,7 +229,7 @@ router.post('/webhook/:channelId', async (req, res) => {
           const senderName = value.contacts?.find(c => c.wa_id === message.from)?.profile?.name || message.from
           
           // Route message to all paired agents
-          for (const channelAgent of channel.agents) {
+          for (const channelAgent of channel.channelAgents) {
             const agent = channelAgent.agent
             
             // Here we would normally send the message to the agent's runtime
@@ -281,7 +281,7 @@ router.get('/status/:channelId', authenticate, async (req: AuthRequest, res: Res
         type: 'WHATSAPP' 
       },
       include: {
-        agents: { include: { agent: true } }
+        channelAgents: { include: { agent: true } }
       }
     })
 
@@ -302,7 +302,7 @@ router.get('/status/:channelId', authenticate, async (req: AuthRequest, res: Res
     const recentLogs = await prisma.agentLog.findMany({
       where: {
         agent: {
-          channels: {
+          agentChannels: {
             some: { channelId }
           }
         }
@@ -314,7 +314,7 @@ router.get('/status/:channelId', authenticate, async (req: AuthRequest, res: Res
     res.json({
       channel,
       apiStatus,
-      pairedAgents: channel.agents.length,
+      pairedAgents: channel.channelAgents.length,
       recentActivity: recentLogs.length,
       config: {
         businessDisplayName: config?.businessDisplayName,
