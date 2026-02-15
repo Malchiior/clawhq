@@ -4,8 +4,8 @@ import {
   LayoutDashboard, MessageCircle, Bot, CheckSquare, FolderKanban,
   StickyNote, CalendarDays, TrendingUp, Wallet, Image, Shield,
   Zap, Target, Lightbulb, Clock, Settings, LogOut,
-  GripVertical, Sun, Moon, Plus, X, RotateCcw, FileText,
-  Users, BarChart3, Lock, Archive
+  GripVertical, Sun, Moon, Plus, X, FileText,
+  Users, BarChart3, Lock
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { apiFetch } from '../lib/api'
