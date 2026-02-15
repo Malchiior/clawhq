@@ -31,14 +31,14 @@
 - [x] 21. Auto-open on first login — after signup, route straight to `/setup` (via setupComplete gate)
 
 ## Handoff & Transition
-- [ ] 22. Handoff animation — "Your agent is ready!" celebration, then smooth transition
-- [ ] 23. Chat history migration — setup messages stay visible briefly, then clear for agent chat
-- [ ] 24. Floating chat switches to user's agent — after setup, floating chat connects to new agent
-- [ ] 25. Dashboard unlock — sidebar and all pages become accessible after setup complete
+- [x] 22. Handoff animation — "Your agent is ready!" celebration with sparkle icon, then spinner transition
+- [x] 23. Chat history migration — localStorage cleared on completion, clean slate for dashboard
+- [x] 24. Floating chat switches to user's agent — FloatingChat auto-loads agents list, connects to first agent
+- [x] 25. Dashboard unlock — setupComplete gate in AppLayout, redirects to /dashboard after handoff
 
 ## Polish
-- [ ] 26. Mobile responsive — setup chat works on phone screens
-- [ ] 27. Error handling — network errors, timeout recovery, retry buttons in chat
-- [ ] 28. Loading states — skeleton messages while waiting for AI response
-- [ ] 29. Persist setup progress — if user refreshes mid-setup, resume where they left off
+- [x] 26. Mobile responsive — responsive padding, font sizes, quick-reply layout (column on mobile)
+- [x] 27. Error handling — connection error messages, retry button with RotateCcw icon
+- [x] 28. Loading states — bouncing dots indicator while AI responds
+- [x] 29. Persist setup progress — localStorage session saves messages + progress, resumes on refresh
 - [ ] 30. Analytics events — track setup starts, path chosen, completion rate, drop-off points

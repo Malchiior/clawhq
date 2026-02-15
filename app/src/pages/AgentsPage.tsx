@@ -103,7 +103,7 @@ export default function AgentsPage() {
   )
 
   return (
-    <motion.div variants={container} initial="hidden" animate="show" className="space-y-6">
+    <motion.div variants={container} initial="hidden" animate="show" className="space-y-6 page-enter">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-text">Agents</h1>

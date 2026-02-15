@@ -113,7 +113,7 @@ export default function ProfilePage() {
   const memberSince = profile?.createdAt ? new Date(profile.createdAt).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : '—'
 
   return (
-    <motion.div variants={container} initial="hidden" animate="show" className="max-w-4xl mx-auto space-y-6">
+    <motion.div variants={container} initial="hidden" animate="show" className="max-w-4xl mx-auto space-y-6 page-enter">
       {/* Header Card */}
       <motion.div variants={item} className="bg-card border border-border rounded-xl overflow-hidden">
         {/* Banner gradient */}

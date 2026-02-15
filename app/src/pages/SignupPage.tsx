@@ -26,7 +26,7 @@ export default function SignupPage() {
       if (result.needsVerification) {
         setSuccess('Account created! Check your email to verify your account.')
       } else {
-        navigate('/onboarding')
+        navigate('/setup')
       }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Signup failed. Try again.')

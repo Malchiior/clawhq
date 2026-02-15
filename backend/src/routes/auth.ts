@@ -101,21 +101,50 @@ router.post('/signup', signupLimiter, async (req: Request, res: Response) => {
       await redeemInviteCode(inviteCode, user.id)
     }
 
-    // Send verification email
-    const verificationUrl = `${process.env.FRONTEND_URL}/auth/verify-email?token=${verificationToken}`
-    const emailHtml = generateVerificationEmailHtml(verificationUrl, name || undefined)
-    
-    await sendEmail({
-      to: email,
-      subject: 'Verify your ClawHQ account',
-      html: emailHtml
-    })
-
-    res.status(201).json({
-      message: 'Account created! Please check your email to verify your account.',
-      needsVerification: true,
-      user: { id: user.id, email: user.email, name: user.name, emailVerified: false }
-    })
+    // Send verification email (skip if Resend not configured)
+    if (process.env.RESEND_API_KEY && process.env.RESEND_API_KEY !== 'skip') {
+      try {
+        const verificationUrl = `${process.env.FRONTEND_URL}/auth/verify-email?token=${verificationToken}`
+        const emailHtml = generateVerificationEmailHtml(verificationUrl, name || undefined)
+        await sendEmail({
+          to: email,
+          subject: 'Verify your ClawHQ account',
+          html: emailHtml
+        })
+        res.status(201).json({
+          message: 'Account created! Please check your email to verify your account.',
+          needsVerification: true,
+          user: { id: user.id, email: user.email, name: user.name, emailVerified: false }
+        })
+      } catch (emailErr) {
+        console.error('Email send failed, auto-verifying:', emailErr)
+        // Auto-verify if email fails
+        await prisma.user.update({ where: { id: user.id }, data: { emailVerified: true } })
+        const sessionInfo = getSessionInfo(req)
+        const tokens = await createSession(user.id, sessionInfo)
+        res.status(201).json({
+          message: 'Account created!',
+          needsVerification: false,
+          accessToken: tokens.accessToken,
+          refreshToken: tokens.refreshToken,
+          expiresAt: tokens.expiresAt.toISOString(),
+          user: { id: user.id, email: user.email, name: user.name, emailVerified: true, setupComplete: false }
+        })
+      }
+    } else {
+      // No email service — auto-verify and log in immediately
+      await prisma.user.update({ where: { id: user.id }, data: { emailVerified: true } })
+      const sessionInfo = getSessionInfo(req)
+      const tokens = await createSession(user.id, sessionInfo)
+      res.status(201).json({
+        message: 'Account created!',
+        needsVerification: false,
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        expiresAt: tokens.expiresAt.toISOString(),
+        user: { id: user.id, email: user.email, name: user.name, emailVerified: true, setupComplete: false }
+      })
+    }
   } catch (err) {
     console.error('Signup error:', err)
     res.status(500).json({ error: 'Internal server error' })
@@ -370,7 +399,8 @@ router.post('/verify-email', async (req: Request, res: Response) => {
         plan: user.plan,
         businessName: user.businessName,
         brandColor: user.brandColor,
-        emailVerified: true
+        emailVerified: true,
+        setupComplete: user.setupComplete
       }
     })
   } catch (err) {

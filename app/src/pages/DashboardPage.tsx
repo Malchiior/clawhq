@@ -1,8 +1,9 @@
 import { motion } from 'framer-motion'
 import { Link } from 'react-router-dom'
-import { Bot, MessageSquare, Zap, TrendingUp, Activity, Clock, Plus, Loader2 } from 'lucide-react'
+import { Bot, MessageSquare, Zap, TrendingUp, Activity, Clock, Plus, Loader2, CheckCircle, Circle, BookOpen, HeadphonesIcon, Rocket, Send, Radio, Users } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { apiFetch } from '../lib/api'
+import { useAuth } from '../context/AuthContext'
 import CreditMeter from '../components/CreditMeter'
 
 interface Agent {
@@ -49,7 +50,22 @@ function timeAgo(date: string): string {
   return `${Math.floor(hours / 24)}d ago`
 }
 
+function getGreeting(): string {
+  const h = new Date().getHours()
+  if (h < 12) return 'Good morning'
+  if (h < 17) return 'Good afternoon'
+  return 'Good evening'
+}
+
+const checklist = [
+  { key: 'agent', label: 'Create your first agent', link: '/agents/quick-deploy', icon: Bot },
+  { key: 'message', label: 'Send your first message', link: '/chat', icon: Send },
+  { key: 'channel', label: 'Connect a channel', link: '/channels', icon: Radio },
+  { key: 'team', label: 'Invite a team member', link: '/settings', icon: Users },
+]
+
 export default function DashboardPage() {
+  const { user } = useAuth()
   const [agents, setAgents] = useState<Agent[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -63,8 +79,16 @@ export default function DashboardPage() {
   const activeAgents = agents.filter(a => a.status === 'RUNNING').length
   const totalMessages = agents.reduce((s, a) => s + a.totalMessages, 0)
   const totalTokens = agents.reduce((s, a) => s + a.totalTokens, 0)
+  const hasChannels = agents.some(a => a.channels && a.channels.length > 0)
 
-  // Collect recent logs from all agents
+  const completedSteps = [
+    agents.length > 0,
+    totalMessages > 0,
+    hasChannels,
+    false, // team invite — can't easily check
+  ]
+  const completedCount = completedSteps.filter(Boolean).length
+
   const recentLogs = agents
     .flatMap(a => (a.logs || []).map(l => ({ ...l, agentName: a.name })))
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
@@ -77,6 +101,12 @@ export default function DashboardPage() {
     { label: 'Total Agents', value: String(agents.length), icon: TrendingUp, color: 'text-primary', bg: 'bg-primary/10' },
   ]
 
+  const quickActions = [
+    { label: 'New Agent', icon: Rocket, link: '/agents/quick-deploy', primary: true },
+    { label: 'View Docs', icon: BookOpen, link: '/docs', primary: false },
+    { label: 'Get Support', icon: HeadphonesIcon, link: '/support', primary: false },
+  ]
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -85,18 +115,21 @@ export default function DashboardPage() {
     )
   }
 
+  const firstName = user?.name?.split(' ')[0] || 'there'
+
   return (
-    <motion.div variants={container} initial="hidden" animate="show" className="space-y-6">
+    <motion.div variants={container} initial="hidden" animate="show" className="space-y-6 page-enter">
+      {/* Welcome Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-text">Dashboard</h1>
-          <p className="text-sm text-text-secondary mt-1">Overview of your AI agent fleet</p>
+          <h1 className="text-2xl font-bold text-text">{getGreeting()}, {firstName}! 👋</h1>
+          <p className="text-sm text-text-secondary mt-1">Here's what's happening with your agents</p>
         </div>
         <div className="flex items-center gap-3">
-          <Link to="/agents/quick-deploy" className="flex items-center gap-2 bg-primary hover:bg-primary-hover text-white text-sm font-medium px-4 py-2.5 rounded-lg transition-colors">
+          <Link to="/agents/quick-deploy" className="flex items-center gap-2 bg-primary hover:bg-primary-hover text-white text-sm font-medium px-4 py-2.5 rounded-lg transition-all hover:scale-[1.02] active:scale-[0.98]">
             <Zap className="w-4 h-4" /> Quick Deploy (30s)
           </Link>
-          <Link to="/agents/new" className="flex items-center gap-2 bg-card border border-border hover:border-border-light text-text text-sm font-medium px-4 py-2.5 rounded-lg transition-colors">
+          <Link to="/agents/new" className="flex items-center gap-2 bg-card border border-border hover:border-border-light text-text text-sm font-medium px-4 py-2.5 rounded-lg transition-all hover:scale-[1.02] active:scale-[0.98]">
             <Plus className="w-4 h-4" /> Advanced
           </Link>
         </div>
@@ -105,7 +138,7 @@ export default function DashboardPage() {
       {/* Stats */}
       <motion.div variants={container} className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {stats.map(s => (
-          <motion.div key={s.label} variants={item} className="bg-card border border-border rounded-xl p-5 hover:border-border-light transition-colors">
+          <motion.div key={s.label} variants={item} className="bg-card border border-border rounded-xl p-5 hover:border-border-light transition-all duration-200 hover:scale-[1.02] hover:shadow-lg hover:shadow-primary/5 cursor-default">
             <div className="flex items-center justify-between mb-3">
               <div className={`w-10 h-10 rounded-lg ${s.bg} flex items-center justify-center`}>
                 <s.icon className={`w-5 h-5 ${s.color}`} />
@@ -117,10 +150,65 @@ export default function DashboardPage() {
         ))}
       </motion.div>
 
+      {/* Quick Actions */}
+      <motion.div variants={item} className="flex items-center gap-3">
+        {quickActions.map(qa => (
+          <Link
+            key={qa.label}
+            to={qa.link}
+            className={`flex items-center gap-2 text-sm font-medium px-4 py-2.5 rounded-lg transition-all hover:scale-[1.02] active:scale-[0.98] ${
+              qa.primary
+                ? 'bg-primary/10 text-primary hover:bg-primary/20 border border-primary/20'
+                : 'bg-card border border-border text-text-secondary hover:text-text hover:border-border-light'
+            }`}
+          >
+            <qa.icon className="w-4 h-4" />
+            {qa.label}
+          </Link>
+        ))}
+      </motion.div>
+
       {/* Credit Meter */}
       <motion.div variants={item}>
         <CreditMeter />
       </motion.div>
+
+      {/* Getting Started Checklist (show if not all complete) */}
+      {completedCount < 4 && (
+        <motion.div variants={item} className="bg-card border border-border rounded-xl p-5">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="font-semibold text-text">Getting Started</h2>
+              <p className="text-xs text-text-muted mt-0.5">{completedCount}/4 completed</p>
+            </div>
+            <div className="h-2 w-32 bg-navy rounded-full overflow-hidden">
+              <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${(completedCount / 4) * 100}%` }} />
+            </div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {checklist.map((step, i) => {
+              const done = completedSteps[i]
+              return (
+                <Link
+                  key={step.key}
+                  to={step.link}
+                  className={`flex items-center gap-3 p-3 rounded-lg transition-all hover:bg-white/[0.03] ${done ? 'opacity-60' : ''}`}
+                >
+                  {done ? (
+                    <CheckCircle className="w-5 h-5 text-success flex-shrink-0" />
+                  ) : (
+                    <Circle className="w-5 h-5 text-text-muted flex-shrink-0" />
+                  )}
+                  <div className="flex items-center gap-2">
+                    <step.icon className="w-4 h-4 text-text-muted" />
+                    <span className={`text-sm ${done ? 'text-text-muted line-through' : 'text-text'}`}>{step.label}</span>
+                  </div>
+                </Link>
+              )
+            })}
+          </div>
+        </motion.div>
+      )}
 
       {agents.length === 0 ? (
         <motion.div variants={item} className="bg-card border border-border rounded-xl p-12 text-center">
@@ -130,10 +218,10 @@ export default function DashboardPage() {
           <h3 className="text-lg font-semibold text-text mb-2">Welcome to ClawHQ!</h3>
           <p className="text-sm text-text-secondary mb-6 max-w-md mx-auto">Deploy your first AI agent in 30 seconds. Connect it to Telegram, WhatsApp, Discord, or any channel.</p>
           <div className="flex items-center gap-3 justify-center">
-            <Link to="/agents/quick-deploy" className="inline-flex items-center gap-2 bg-primary hover:bg-primary-hover text-white text-sm font-medium px-6 py-3 rounded-lg transition-colors">
+            <Link to="/agents/quick-deploy" className="inline-flex items-center gap-2 bg-primary hover:bg-primary-hover text-white text-sm font-medium px-6 py-3 rounded-lg transition-all hover:scale-[1.02] active:scale-[0.98]">
               <Zap className="w-4 h-4" /> Quick Deploy (30s)
             </Link>
-            <Link to="/agents/new" className="inline-flex items-center gap-2 bg-card border border-border hover:border-border-light text-text text-sm font-medium px-4 py-3 rounded-lg transition-colors">
+            <Link to="/agents/new" className="inline-flex items-center gap-2 bg-card border border-border hover:border-border-light text-text text-sm font-medium px-4 py-3 rounded-lg transition-all hover:scale-[1.02] active:scale-[0.98]">
               <Plus className="w-4 h-4" /> Advanced Setup
             </Link>
           </div>
