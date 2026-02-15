@@ -9,6 +9,10 @@ router.use(authenticate)
 // Encryption key for API keys (in production, use a proper key management system)
 const ENCRYPTION_KEY = process.env.API_KEY_ENCRYPTION_KEY || 'default-key-for-dev-only-32-chars'
 
+if (process.env.NODE_ENV === 'production' && ENCRYPTION_KEY === 'default-key-for-dev-only-32-chars') {
+  console.error('🚨 WARNING: API_KEY_ENCRYPTION_KEY is using the default value! Set a strong key in production.')
+}
+
 function encrypt(text: string): string {
   const algorithm = 'aes-256-cbc'
   const key = crypto.scryptSync(ENCRYPTION_KEY, 'salt', 32)

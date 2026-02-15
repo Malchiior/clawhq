@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useCallback, useEffect, useRef, type ReactNode } from 'react'
+import { resetUser } from '../lib/analytics'
 
 const API_URL = import.meta.env.VITE_API_URL || ''
 
@@ -10,6 +11,7 @@ interface User {
   plan: string
   businessName: string | null
   brandColor: string
+  setupComplete?: boolean
 }
 
 interface AuthContextType {
@@ -17,7 +19,7 @@ interface AuthContextType {
   isLoading: boolean
   isAuthenticated: boolean
   login: (email: string, password: string) => Promise<{ needsVerification?: boolean }>
-  signup: (email: string, password: string, name: string) => Promise<{ needsVerification?: boolean }>
+  signup: (email: string, password: string, name: string, inviteCode?: string) => Promise<{ needsVerification?: boolean }>
   loginWithGoogle: () => void
   logout: () => void
   verifyEmail: (token: string) => Promise<void>
@@ -132,11 +134,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return {}
   }, [])
 
-  const signup = useCallback(async (email: string, password: string, name: string) => {
+  const signup = useCallback(async (email: string, password: string, name: string, inviteCode?: string) => {
     const res = await fetch(`${API_URL}/api/auth/signup`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password, name }),
+      body: JSON.stringify({ email, password, name, inviteCode }),
     })
     const data = await res.json()
     if (!res.ok) throw new Error(data.error || 'Signup failed')
@@ -190,6 +192,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     clearTokens()
     setUser(null)
+    resetUser()
   }, [])
 
   return (

@@ -1,6 +1,6 @@
 import { EventEmitter } from 'events'
 import prisma from './prisma'
-import dockerService from './docker'
+import { containerOrchestrator } from './containerOrchestrator'
 
 interface AgentHealthMetrics {
   agentId: string
@@ -22,10 +22,20 @@ interface HealthCheckResult {
   alerts: string[]
 }
 
+interface RestartRecord {
+  count: number
+  lastAttempt: number
+  nextAllowedAt: number
+}
+
 class HealthMonitorService extends EventEmitter {
   private intervalId: NodeJS.Timeout | null = null
   private readonly checkInterval = 30000 // 30 seconds
   private readonly clients: Set<{ agentId?: string; res: any; userId: string }> = new Set()
+  private readonly restartTracker: Map<string, RestartRecord> = new Map()
+  private readonly maxRestarts = 5           // Max restarts per agent before giving up
+  private readonly restartBackoffBase = 30000 // 30s base backoff, doubles each retry
+  private readonly restartCooldown = 3600000  // Reset restart counter after 1 hour of stability
   
   async start(): Promise<void> {
     console.log('🔍 Starting health monitor service')
@@ -72,6 +82,14 @@ class HealthMonitorService extends EventEmitter {
           })
         }
 
+        // Auto-restart crashed/unreachable agents
+        if (result.metrics.status === 'unreachable') {
+          await this.attemptAutoRestart(agent.id, agent.userId, result)
+        } else if (result.metrics.status === 'healthy') {
+          // Reset restart counter after sustained health
+          this.resetRestartTracker(agent.id)
+        }
+
         // Emit real-time updates to connected clients
         this.emitToClients(agent.user.id, 'health-update', result)
         
@@ -107,7 +125,7 @@ class HealthMonitorService extends EventEmitter {
     try {
       const agent = await prisma.agent.findUnique({
         where: { id: agentId },
-        include: { logs: { orderBy: { createdAt: 'desc' }, take: 50 } }
+        include: { logs: { orderBy: { createdAt: 'desc' }, take: 50 }, user: { select: { id: true } } }
       })
 
       if (!agent) {
@@ -122,8 +140,12 @@ class HealthMonitorService extends EventEmitter {
 
       if (agent.containerId) {
         try {
-          containerStatus = await dockerService.getContainerStatus(agent.containerId)
-          const stats = await dockerService.getContainerStats(agent.containerId)
+          // Get container info from orchestrator (which queries Docker)
+          const info = await containerOrchestrator.getContainerInfo(agent.user.id, agent.id)
+          containerStatus = info?.status || 'unknown'
+          const stats = agent.containerId 
+            ? await containerOrchestrator.getContainerStats(agent.containerId)
+            : { cpu_percent: 0, memory_usage_mb: 0, uptime_seconds: 0 }
           cpuUsage = stats.cpu_percent || 0
           memoryUsage = stats.memory_usage_mb || 0
           containerUptime = stats.uptime_seconds || 0
@@ -209,6 +231,91 @@ class HealthMonitorService extends EventEmitter {
         alerts: [`Health check failed: ${String(error)}`]
       }
     }
+  }
+
+  private async attemptAutoRestart(agentId: string, userId: string, result: HealthCheckResult): Promise<void> {
+    const record = this.restartTracker.get(agentId) || { count: 0, lastAttempt: 0, nextAllowedAt: 0 }
+    const now = Date.now()
+
+    // Reset if cooldown has passed since last attempt (agent was stable)
+    if (record.lastAttempt > 0 && now - record.lastAttempt > this.restartCooldown) {
+      record.count = 0
+      record.nextAllowedAt = 0
+    }
+
+    // Check if we've exhausted restart attempts
+    if (record.count >= this.maxRestarts) {
+      await prisma.agentLog.create({
+        data: {
+          agentId,
+          level: 'error',
+          message: `Auto-restart disabled: exceeded ${this.maxRestarts} restart attempts. Manual intervention required.`,
+          metadata: { restartCount: record.count, lastAttempt: new Date(record.lastAttempt).toISOString() }
+        }
+      })
+      this.emitToClients(userId, 'restart-failed', {
+        agentId,
+        reason: 'max_restarts_exceeded',
+        restartCount: record.count
+      })
+      return
+    }
+
+    // Check backoff timer
+    if (now < record.nextAllowedAt) {
+      return // Too soon, wait for backoff
+    }
+
+    // Attempt restart
+    record.count++
+    record.lastAttempt = now
+    record.nextAllowedAt = now + this.restartBackoffBase * Math.pow(2, record.count - 1)
+    this.restartTracker.set(agentId, record)
+
+    try {
+      console.log(`🔄 Auto-restarting agent ${agentId} (attempt ${record.count}/${this.maxRestarts})`)
+      await containerOrchestrator.startContainer(userId, agentId)
+
+      await prisma.agentLog.create({
+        data: {
+          agentId,
+          level: 'info',
+          message: `Auto-restart successful (attempt ${record.count}/${this.maxRestarts})`,
+          metadata: { restartCount: record.count }
+        }
+      })
+
+      this.emitToClients(userId, 'agent-restarted', {
+        agentId,
+        attempt: record.count,
+        maxAttempts: this.maxRestarts
+      })
+    } catch (error: any) {
+      console.error(`❌ Auto-restart failed for ${agentId}:`, error.message)
+      await prisma.agentLog.create({
+        data: {
+          agentId,
+          level: 'error',
+          message: `Auto-restart failed (attempt ${record.count}/${this.maxRestarts}): ${error.message}`,
+          metadata: { restartCount: record.count, error: error.message }
+        }
+      })
+    }
+  }
+
+  private resetRestartTracker(agentId: string): void {
+    const record = this.restartTracker.get(agentId)
+    if (record && record.count > 0 && Date.now() - record.lastAttempt > this.restartCooldown) {
+      this.restartTracker.delete(agentId)
+    }
+  }
+
+  getRestartInfo(agentId: string): RestartRecord | null {
+    return this.restartTracker.get(agentId) || null
+  }
+
+  resetRestarts(agentId: string): void {
+    this.restartTracker.delete(agentId)
   }
 
   public mapStatusToAgentStatus(healthStatus: AgentHealthMetrics['status']): string {

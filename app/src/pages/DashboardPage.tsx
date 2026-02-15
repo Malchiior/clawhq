@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { Bot, MessageSquare, Zap, TrendingUp, Activity, Clock, Plus, Loader2 } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { apiFetch } from '../lib/api'
+import CreditMeter from '../components/CreditMeter'
 
 interface Agent {
   id: string
@@ -102,7 +103,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Stats */}
-      <motion.div variants={container} className="grid grid-cols-4 gap-4">
+      <motion.div variants={container} className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {stats.map(s => (
           <motion.div key={s.label} variants={item} className="bg-card border border-border rounded-xl p-5 hover:border-border-light transition-colors">
             <div className="flex items-center justify-between mb-3">
@@ -114,6 +115,11 @@ export default function DashboardPage() {
             <p className="text-xs text-text-muted mt-0.5">{s.label}</p>
           </motion.div>
         ))}
+      </motion.div>
+
+      {/* Credit Meter */}
+      <motion.div variants={item}>
+        <CreditMeter />
       </motion.div>
 
       {agents.length === 0 ? (
@@ -133,9 +139,9 @@ export default function DashboardPage() {
           </div>
         </motion.div>
       ) : (
-        <div className="grid grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Agent Overview */}
-          <motion.div variants={item} className="col-span-2 bg-card border border-border rounded-xl">
+          <motion.div variants={item} className="lg:col-span-2 bg-card border border-border rounded-xl">
             <div className="flex items-center justify-between p-5 border-b border-border">
               <h2 className="font-semibold text-text">Agent Overview</h2>
               <Link to="/agents" className="text-xs text-primary hover:text-primary-hover transition-colors">View all →</Link>

@@ -2,6 +2,7 @@ import { Router, Response } from 'express'
 import prisma from '../lib/prisma'
 import { authenticate, AuthRequest } from '../middleware/auth'
 import { bundledApiService } from '../lib/bundled-api'
+import { enforceCredits, deductCredits, CreditRequest } from '../middleware/credits'
 
 const router = Router()
 router.use(authenticate)
@@ -162,6 +163,12 @@ router.post('/estimate', async (req: AuthRequest, res: Response) => {
   }
 })
 
+// Pre-flight credit check (called before making an API call)
+router.post('/check-credits', enforceCredits, async (req: CreditRequest, res: Response) => {
+  // If we get here, credits are available (middleware would have blocked with 429)
+  res.json({ canProceed: true, creditInfo: req.creditInfo })
+})
+
 // Record API usage (called by agent deployment service)
 router.post('/record-usage', async (req: AuthRequest, res: Response) => {
   try {
@@ -179,8 +186,24 @@ router.post('/record-usage', async (req: AuthRequest, res: Response) => {
       model,
       timestamp: new Date()
     })
+
+    // Deduct credits (cost in cents)
+    const pricing = bundledApiService.getPricingInfo()
+    const modelPricing = pricing[model as keyof typeof pricing]
+    let costCents = 0
+    if (modelPricing) {
+      costCents = ((inputTokens * modelPricing.input + outputTokens * modelPricing.output) / 1000) * 100
+    } else {
+      costCents = ((inputTokens * 0.001 + outputTokens * 0.003) / 1000) * 100
+    }
+
+    const creditInfo = await deductCredits(userId, costCents)
     
-    res.json({ success: true, message: 'Usage recorded successfully' })
+    res.json({
+      success: true,
+      message: 'Usage recorded successfully',
+      creditInfo
+    })
   } catch (error) {
     console.error('Failed to record usage:', error)
     res.status(500).json({ error: 'Failed to record usage' })

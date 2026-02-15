@@ -4,6 +4,14 @@
   "installCommand": "cd app && npm ci",
   "rewrites": [
     {
+      "source": "/terms",
+      "destination": "/terms.html"
+    },
+    {
+      "source": "/privacy",
+      "destination": "/privacy.html"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }

@@ -1,0 +1,78 @@
+# ClawHQ Development Docker Compose
+# For testing the container orchestration locally
+
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: clawhq_dev
+      POSTGRES_USER: clawhq
+      POSTGRES_PASSWORD: dev_password_123
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U clawhq -d clawhq_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Redis for caching (optional)
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ClawHQ Backend API
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    ports:
+      - "3001:3001"
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://clawhq:dev_password_123@postgres:5432/clawhq_dev
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: dev_jwt_secret_change_in_production_12345
+      
+      # API Keys for bundled mode (development only)
+      CLAWHQ_CLAUDE_API_KEY: ${CLAWHQ_CLAUDE_API_KEY}
+      CLAWHQ_OPENAI_API_KEY: ${CLAWHQ_OPENAI_API_KEY}
+      CLAWHQ_GEMINI_API_KEY: ${CLAWHQ_GEMINI_API_KEY}
+      CLAWHQ_DEEPSEEK_API_KEY: ${CLAWHQ_DEEPSEEK_API_KEY}
+      CLAWHQ_GROK_API_KEY: ${CLAWHQ_GROK_API_KEY}
+      
+      # Email (development)
+      RESEND_API_KEY: ${RESEND_API_KEY}
+      
+      # Docker socket for container orchestration
+      DOCKER_HOST: unix:///var/run/docker.sock
+      
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - .:/app
+      - node_modules:/app/node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: npm run dev
+
+volumes:
+  postgres_data:
+  redis_data:
+  node_modules:

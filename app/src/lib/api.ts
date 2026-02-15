@@ -24,4 +24,29 @@ export async function apiFetch(path: string, options: RequestInit = {}) {
   return res.json()
 }
 
+export async function apiUpload(path: string, formData: FormData) {
+  const token = localStorage.getItem('clawhq_token')
+  const headers: Record<string, string> = {}
+  if (token) headers['Authorization'] = `Bearer ${token}`
+
+  const res = await fetch(`${API_URL}${path}`, {
+    method: 'POST',
+    headers,
+    body: formData,
+  })
+
+  if (res.status === 401) {
+    localStorage.removeItem('clawhq_token')
+    window.location.href = '/login'
+    throw new Error('Unauthorized')
+  }
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: 'Upload failed' }))
+    throw new Error(body.error || `HTTP ${res.status}`)
+  }
+
+  return res.json()
+}
+
 export { API_URL }

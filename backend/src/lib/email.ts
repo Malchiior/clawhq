@@ -32,6 +32,48 @@ export async function sendEmail({ to, subject, html }: EmailOptions) {
   }
 }
 
+export function generatePasswordResetEmailHtml(resetUrl: string, name?: string): string {
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Reset your ClawHQ password</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { text-align: center; margin-bottom: 30px; }
+        .logo { font-size: 24px; font-weight: bold; color: #3b82f6; }
+        .content { background: #f9fafb; padding: 30px; border-radius: 8px; margin-bottom: 30px; }
+        .btn { display: inline-block; background: #3b82f6; color: white; text-decoration: none; padding: 12px 24px; border-radius: 6px; font-weight: 500; margin: 20px 0; }
+        .footer { text-align: center; color: #666; font-size: 14px; }
+        .link { word-break: break-all; color: #3b82f6; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="logo">🤖 ClawHQ</div>
+    </div>
+    <div class="content">
+        <h2>Reset your password</h2>
+        <p>Hi${name ? ` ${name}` : ''},</p>
+        <p>We received a request to reset the password for your ClawHQ account. Click the button below to choose a new password.</p>
+        <p style="text-align: center;">
+            <a href="${resetUrl}" class="btn">Reset Password</a>
+        </p>
+        <p>If the button doesn't work, copy and paste this link into your browser:</p>
+        <p><a href="${resetUrl}" class="link">${resetUrl}</a></p>
+        <p><strong>This link will expire in 1 hour.</strong></p>
+        <p>If you didn't request a password reset, you can safely ignore this email. Your password will remain unchanged.</p>
+    </div>
+    <div class="footer">
+        <p>Best regards,<br>The ClawHQ Team</p>
+        <p><a href="https://clawhq.dev">clawhq.dev</a></p>
+    </div>
+</body>
+</html>
+  `
+}
+
 export function generateVerificationEmailHtml(verificationUrl: string, name?: string): string {
   return `
 <!DOCTYPE html>

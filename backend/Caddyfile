@@ -1,0 +1,32 @@
+# ClawHQ API - Caddy Reverse Proxy with Auto-SSL
+# Used in docker-compose.prod.yml for self-hosted deployments
+
+{$API_DOMAIN:api.clawhq.dev} {
+    reverse_proxy api:3001
+
+    # Security headers
+    header {
+        X-Content-Type-Options nosniff
+        X-Frame-Options DENY
+        Referrer-Policy strict-origin-when-cross-origin
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        -Server
+    }
+
+    # Rate limiting (100 req/min per IP)
+    rate_limit {
+        zone api {
+            key {remote_host}
+            events 100
+            window 1m
+        }
+    }
+
+    # Gzip
+    encode gzip
+
+    log {
+        output stdout
+        format console
+    }
+}

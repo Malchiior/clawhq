@@ -119,6 +119,60 @@ router.post('/check/:agentId', async (req: AuthRequest, res: Response) => {
   }
 })
 
+// Get auto-restart info for an agent
+router.get('/restarts/:agentId', async (req: AuthRequest, res: Response) => {
+  try {
+    const agentId = req.params.agentId as string
+    const agent = await prisma.agent.findFirst({ where: { id: agentId, userId: req.userId } })
+    if (!agent) { res.status(404).json({ error: 'Agent not found' }); return }
+
+    const restartInfo = healthMonitor.getRestartInfo(agentId)
+    
+    // Also get restart-related logs
+    const restartLogs = await prisma.agentLog.findMany({
+      where: {
+        agentId,
+        message: { contains: 'restart' },
+        createdAt: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) }
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 20
+    })
+
+    res.json({
+      restartInfo: restartInfo || { count: 0, lastAttempt: 0, nextAllowedAt: 0 },
+      recentRestarts: restartLogs.map(l => ({
+        timestamp: l.createdAt,
+        level: l.level,
+        message: l.message,
+        metadata: l.metadata
+      }))
+    })
+  } catch (error) {
+    console.error('❌ Failed to get restart info:', error)
+    res.status(500).json({ error: 'Failed to get restart info' })
+  }
+})
+
+// Reset restart counter for an agent (manual intervention acknowledgment)
+router.post('/restarts/:agentId/reset', async (req: AuthRequest, res: Response) => {
+  try {
+    const agentId = req.params.agentId as string
+    const agent = await prisma.agent.findFirst({ where: { id: agentId, userId: req.userId } })
+    if (!agent) { res.status(404).json({ error: 'Agent not found' }); return }
+
+    healthMonitor.resetRestarts(agentId)
+    await prisma.agentLog.create({
+      data: { agentId, level: 'info', message: 'Restart counter manually reset by user' }
+    })
+
+    res.json({ success: true, message: 'Restart counter reset — auto-restart re-enabled' })
+  } catch (error) {
+    console.error('❌ Failed to reset restarts:', error)
+    res.status(500).json({ error: 'Failed to reset restart counter' })
+  }
+})
+
 // Get health history/trends (last 24 hours)
 router.get('/history/:agentId', async (req: AuthRequest, res: Response) => {
   try {

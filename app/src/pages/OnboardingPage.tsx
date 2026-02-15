@@ -1,4 +1,4 @@
-﻿import { useState } from 'react'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Building2, Palette, Brain, ChevronRight, ChevronLeft, Sparkles } from 'lucide-react'
@@ -81,7 +81,7 @@ export default function OnboardingPage() {
 
               {step === 1 && (
                 <div className="space-y-4">
-                  <div className="grid grid-cols-4 gap-3">
+                  <div className="grid grid-cols-4 sm:grid-cols-4 gap-3">
                     {brandColors.map(c => (
                       <button key={c} onClick={() => setBrandColor(c)} className={`h-12 rounded-lg transition-all ${brandColor === c ? 'ring-2 ring-white ring-offset-2 ring-offset-card scale-110' : 'hover:scale-105'}`} style={{ backgroundColor: c }} />
                     ))}

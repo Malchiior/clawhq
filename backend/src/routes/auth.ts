@@ -1,11 +1,12 @@
 ﻿import { Router, Request, Response } from 'express'
 import bcrypt from 'bcryptjs'
 import crypto from 'crypto'
+import rateLimit from 'express-rate-limit'
 const uuidv4 = () => crypto.randomUUID()
 import prisma from '../lib/prisma'
 import { authenticate, AuthRequest } from '../middleware/auth'
 import passport from '../lib/passport'
-import { sendEmail, generateVerificationEmailHtml } from '../lib/email'
+import { sendEmail, generateVerificationEmailHtml, generatePasswordResetEmailHtml } from '../lib/email'
 import { 
   createSession, 
   refreshSession, 
@@ -14,9 +15,27 @@ import {
   getUserSessions,
   cleanupExpiredSessions
 } from '../lib/session'
+import { redeemInviteCode } from './invites'
 
 const router = Router()
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173'
+
+// Rate limiting for auth endpoints
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10, // 10 attempts per window per IP
+  message: { error: 'Too many attempts. Please try again in 15 minutes.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+})
+
+const signupLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 5, // 5 signups per hour per IP
+  message: { error: 'Too many accounts created. Please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+})
 
 function getSessionInfo(req: Request) {
   return {
@@ -25,12 +44,28 @@ function getSessionInfo(req: Request) {
   }
 }
 
-router.post('/signup', async (req: Request, res: Response) => {
+router.post('/signup', signupLimiter, async (req: Request, res: Response) => {
   try {
-    const { email, password, name } = req.body
+    const { email, password, name, inviteCode } = req.body
     if (!email || !password) {
       res.status(400).json({ error: 'Email and password required' })
       return
+    }
+
+    // Beta: require invite code (skip if BETA_OPEN=true)
+    const betaOpen = process.env.BETA_OPEN === 'true'
+    if (!betaOpen) {
+      if (!inviteCode) {
+        res.status(400).json({ error: 'Invite code required for beta access' })
+        return
+      }
+      // Pre-validate before creating user
+      const { default: invPrisma } = await import('../lib/prisma')
+      const invite = await invPrisma.inviteCode.findUnique({ where: { code: inviteCode.toUpperCase().trim() } })
+      if (!invite || !invite.isActive || (invite.expiresAt && invite.expiresAt < new Date()) || invite.usedCount >= invite.maxUses) {
+        res.status(400).json({ error: 'Invalid or expired invite code' })
+        return
+      }
     }
 
     // Validate email format
@@ -61,6 +96,11 @@ router.post('/signup', async (req: Request, res: Response) => {
       },
     })
 
+    // Redeem invite code if provided
+    if (inviteCode && !betaOpen) {
+      await redeemInviteCode(inviteCode, user.id)
+    }
+
     // Send verification email
     const verificationUrl = `${process.env.FRONTEND_URL}/auth/verify-email?token=${verificationToken}`
     const emailHtml = generateVerificationEmailHtml(verificationUrl, name || undefined)
@@ -82,7 +122,7 @@ router.post('/signup', async (req: Request, res: Response) => {
   }
 })
 
-router.post('/login', async (req: Request, res: Response) => {
+router.post('/login', authLimiter, async (req: Request, res: Response) => {
   try {
     const { email, password } = req.body
     if (!email || !password) {
@@ -127,7 +167,8 @@ router.post('/login', async (req: Request, res: Response) => {
         plan: user.plan, 
         businessName: user.businessName, 
         brandColor: user.brandColor,
-        emailVerified: user.emailVerified
+        emailVerified: user.emailVerified,
+        setupComplete: user.setupComplete
       },
     })
   } catch (err) {
@@ -152,7 +193,8 @@ router.get('/me', authenticate, async (req: AuthRequest, res: Response) => {
         plan: user.plan, 
         businessName: user.businessName, 
         brandColor: user.brandColor,
-        emailVerified: user.emailVerified
+        emailVerified: user.emailVerified,
+        setupComplete: user.setupComplete
       },
     })
   } catch (err) {
@@ -187,14 +229,95 @@ router.get('/google/callback',
   }
 )
 
-router.post('/forgot-password', async (req: Request, res: Response) => {
-  // TODO: Implement password reset email
-  res.json({ message: 'If that email exists, a reset link has been sent.' })
+router.post('/forgot-password', authLimiter, async (req: Request, res: Response) => {
+  try {
+    const { email } = req.body
+    if (!email) {
+      res.status(400).json({ error: 'Email required' })
+      return
+    }
+
+    // Always return success to prevent email enumeration
+    const successMsg = 'If that email exists, a reset link has been sent.'
+
+    const user = await prisma.user.findUnique({ where: { email } })
+    if (!user || !user.passwordHash) {
+      // Don't reveal whether user exists (or is OAuth-only)
+      res.json({ message: successMsg })
+      return
+    }
+
+    const resetToken = crypto.randomBytes(32).toString('hex')
+    const resetExpires = new Date(Date.now() + 60 * 60 * 1000) // 1 hour
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        passwordResetToken: resetToken,
+        passwordResetExpires: resetExpires,
+      },
+    })
+
+    const resetUrl = `${FRONTEND_URL}/reset-password?token=${resetToken}`
+    const emailHtml = generatePasswordResetEmailHtml(resetUrl, user.name || undefined)
+
+    await sendEmail({
+      to: email,
+      subject: 'Reset your ClawHQ password',
+      html: emailHtml,
+    })
+
+    res.json({ message: successMsg })
+  } catch (err) {
+    console.error('Forgot password error:', err)
+    res.status(500).json({ error: 'Internal server error' })
+  }
 })
 
-router.post('/reset-password', async (req: Request, res: Response) => {
-  // TODO: Implement password reset
-  res.json({ message: 'Password reset successfully.' })
+router.post('/reset-password', authLimiter, async (req: Request, res: Response) => {
+  try {
+    const { token, password } = req.body
+    if (!token || !password) {
+      res.status(400).json({ error: 'Token and new password required' })
+      return
+    }
+
+    if (password.length < 8) {
+      res.status(400).json({ error: 'Password must be at least 8 characters' })
+      return
+    }
+
+    const user = await prisma.user.findFirst({
+      where: {
+        passwordResetToken: token,
+        passwordResetExpires: { gte: new Date() },
+      },
+    })
+
+    if (!user) {
+      res.status(400).json({ error: 'Invalid or expired reset token' })
+      return
+    }
+
+    const passwordHash = await bcrypt.hash(password, 12)
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        passwordHash,
+        passwordResetToken: null,
+        passwordResetExpires: null,
+      },
+    })
+
+    // Revoke all existing sessions for security
+    await revokeAllUserSessions(user.id)
+
+    res.json({ message: 'Password reset successfully. Please log in with your new password.' })
+  } catch (err) {
+    console.error('Reset password error:', err)
+    res.status(500).json({ error: 'Internal server error' })
+  }
 })
 
 // Email verification endpoint
@@ -386,8 +509,9 @@ router.get('/sessions', authenticate, async (req: AuthRequest, res: Response) =>
 router.post('/cleanup-sessions', async (req: Request, res: Response) => {
   try {
     // Basic API key auth for cleanup endpoint
-    const apiKey = req.headers['x-api-key']
-    if (apiKey !== process.env.CLEANUP_API_KEY) {
+    const apiKey = req.headers['x-api-key'] as string | undefined
+    const expected = process.env.CLEANUP_API_KEY
+    if (!apiKey || !expected || !crypto.timingSafeEqual(Buffer.from(apiKey), Buffer.from(expected))) {
       res.status(401).json({ error: 'Invalid API key' })
       return
     }

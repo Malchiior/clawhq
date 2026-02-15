@@ -1,467 +1,658 @@
-import { Router, Response } from 'express'
-import prisma from '../lib/prisma'
-import { authenticate, AuthRequest } from '../middleware/auth'
-import dockerService, { ContainerConfig } from '../lib/docker'
-import { getUserApiKeys } from './api-keys'
-import { bundledApiService } from '../lib/bundled-api'
+import { Router, Response } from 'express';
+import crypto from 'crypto';
+import prisma from '../lib/prisma';
+import { containerOrchestrator, AgentConfig } from '../lib/containerOrchestrator';
+import { authenticate, AuthRequest } from '../middleware/auth';
+import { generateOpenClawConfig, generateLocalSnippet, generateDockerEnv, validateConfig, AgentSettings, ChannelConfig } from '../lib/configGenerator';
 
-const router = Router()
-router.use(authenticate)
+const router = Router();
 
-function paramId(req: AuthRequest): string {
-  return req.params.id as string
-}
+// ---------------------------------------------------------------------------
+// GET /api/agents — list user's agents
+// ---------------------------------------------------------------------------
 
-function getModelProvider(model: string): string | null {
-  if (model.startsWith('claude-') || model.includes('anthropic')) {
-    return 'anthropic'
-  }
-  if (model.startsWith('gpt-') || model.includes('openai')) {
-    return 'openai'
-  }
-  if (model.includes('gemini') || model.includes('google')) {
-    return 'google'
-  }
-  if (model.includes('deepseek')) {
-    return 'deepseek'
-  }
-  if (model.includes('grok')) {
-    return 'grok'
-  }
-  return null
-}
-
-router.get('/', async (req: AuthRequest, res: Response) => {
+router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
   try {
+    const userId = req.userId!;
+
     const agents = await prisma.agent.findMany({
-      where: { userId: req.userId },
-      include: { channels: { include: { channel: true } } },
+      where: { userId },
       orderBy: { createdAt: 'desc' },
-    })
-    res.json({ agents })
-  } catch {
-    res.status(500).json({ error: 'Internal server error' })
+    });
+
+    const agentsWithContainer = await Promise.all(
+      agents.map(async (agent) => {
+        const containerInfo = await containerOrchestrator.getContainerInfo(userId, agent.id);
+        return {
+          id: agent.id,
+          name: agent.name,
+          modelProvider: agent.modelProvider,
+          model: agent.model,
+          deployMode: agent.deployMode,
+          usesBundledApi: agent.usesBundledApi,
+          channels: agent.channels,
+          status: agent.status,
+          containerStatus: containerInfo?.status || 'not-deployed',
+          containerPort: containerInfo?.port || null,
+          lastHealthCheck: containerInfo?.lastHealthCheck || null,
+          totalMessages: agent.totalMessages,
+          totalTokens: agent.totalTokens,
+          lastActiveAt: agent.lastActiveAt,
+          createdAt: agent.createdAt,
+          updatedAt: agent.updatedAt,
+        };
+      }),
+    );
+
+    res.json({ agents: agentsWithContainer });
+  } catch (error) {
+    console.error('Error fetching agents:', error);
+    res.status(500).json({ error: 'Failed to fetch agents' });
   }
-})
+});
 
-router.post('/', async (req: AuthRequest, res: Response) => {
+// ---------------------------------------------------------------------------
+// POST /api/agents — create new agent
+// ---------------------------------------------------------------------------
+
+router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
   try {
-    const { name, model, systemPrompt, temperature, maxTokens } = req.body
-    const user = await prisma.user.findUnique({ where: { id: req.userId } })
-    const agentCount = await prisma.agent.count({ where: { userId: req.userId } })
+    const userId = req.userId!;
+    const { name, modelProvider, model, apiKey, channels, usesBundledApi, deployMode, systemPrompt, temperature, maxTokens } = req.body;
 
-    if (user && agentCount >= user.maxAgents) {
-      res.status(403).json({ error: 'Agent limit reached. Upgrade your plan.' })
-      return
+    if (!name || typeof name !== 'string' || name.length > 50) {
+      return res.status(400).json({ error: 'Name is required (max 50 chars)' });
     }
+
+    // Validate deploy mode
+    const validModes = ['CLOUD', 'LOCAL', 'DASHBOARD'];
+    const mode = validModes.includes(deployMode) ? deployMode : 'CLOUD';
+
+    // Check agent limit by plan
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const agentCount = await prisma.agent.count({ where: { userId } });
+    if (agentCount >= user.maxAgents) {
+      return res.status(403).json({
+        error: `Agent limit reached (${user.maxAgents}). Upgrade your plan.`,
+      });
+    }
+
+    // BYOK requires API key, but LOCAL and DASHBOARD modes can skip it
+    if (!usesBundledApi && !apiKey && mode === 'CLOUD') {
+      return res.status(400).json({ error: 'API key required for cloud deployment when not using bundled API' });
+    }
+
+    // Validate system prompt length
+    if (systemPrompt && systemPrompt.length > 10000) {
+      return res.status(400).json({ error: 'System prompt too long (max 10,000 characters)' });
+    }
+
+    // For LOCAL mode, set status to STOPPED (will become RUNNING when relay connects)
+    // For DASHBOARD mode, set status to RUNNING immediately (uses bundled API)
+    const initialStatus = mode === 'DASHBOARD' ? 'RUNNING' : 'STOPPED';
 
     const agent = await prisma.agent.create({
-      data: { name, model, systemPrompt, temperature, maxTokens, userId: req.userId! },
-    })
-    res.status(201).json({ agent })
-  } catch {
-    res.status(500).json({ error: 'Internal server error' })
-  }
-})
+      data: {
+        userId,
+        name,
+        modelProvider: modelProvider || 'claude',
+        model: model || 'claude-sonnet-4-20250514',
+        deployMode: mode,
+        apiKey: (usesBundledApi || mode === 'LOCAL') ? null : apiKey,
+        usesBundledApi: mode === 'DASHBOARD' ? true : !!usesBundledApi,
+        channels: channels || [],
+        status: initialStatus,
+        systemPrompt: systemPrompt || null,
+        temperature: typeof temperature === 'number' ? temperature : 0.7,
+        maxTokens: typeof maxTokens === 'number' ? maxTokens : 4096,
+      },
+    });
 
-router.get('/:id', async (req: AuthRequest, res: Response) => {
-  try {
-    const agent = await prisma.agent.findFirst({
-      where: { id: paramId(req), userId: req.userId },
-      include: { channels: { include: { channel: true } }, logs: { orderBy: { createdAt: 'desc' }, take: 50 } },
-    })
-    if (!agent) { res.status(404).json({ error: 'Agent not found' }); return }
-    res.json({ agent })
-  } catch {
-    res.status(500).json({ error: 'Internal server error' })
+    res.status(201).json({
+      agent: {
+        id: agent.id,
+        name: agent.name,
+        modelProvider: agent.modelProvider,
+        model: agent.model,
+        deployMode: agent.deployMode,
+        usesBundledApi: agent.usesBundledApi,
+        channels: agent.channels,
+        status: agent.status,
+        createdAt: agent.createdAt,
+      },
+    });
+  } catch (error) {
+    console.error('Error creating agent:', error);
+    res.status(500).json({ error: 'Failed to create agent' });
   }
-})
+});
 
-router.patch('/:id', async (req: AuthRequest, res: Response) => {
-  try {
-    const { name, systemPrompt, temperature, maxTokens, model } = req.body
-    const agent = await prisma.agent.updateMany({
-      where: { id: paramId(req), userId: req.userId },
-      data: { name, systemPrompt, temperature, maxTokens, model },
-    })
-    if (agent.count === 0) { res.status(404).json({ error: 'Agent not found' }); return }
-    res.json({ success: true })
-  } catch {
-    res.status(500).json({ error: 'Internal server error' })
-  }
-})
+// ---------------------------------------------------------------------------
+// POST /api/agents/:agentId/deploy — deploy agent to container
+// ---------------------------------------------------------------------------
 
-router.delete('/:id', async (req: AuthRequest, res: Response) => {
+router.post('/:agentId/deploy', authenticate, async (req: AuthRequest, res: Response) => {
   try {
-    await prisma.agent.deleteMany({ where: { id: paramId(req), userId: req.userId } })
-    res.json({ success: true })
-  } catch {
-    res.status(500).json({ error: 'Internal server error' })
-  }
-})
+    const userId = req.userId!;
+    const agentId = req.params.agentId as string;
 
-router.post('/:id/start', async (req: AuthRequest, res: Response) => {
-  try {
-    const agentId = paramId(req)
-    const agent = await prisma.agent.findFirst({
-      where: { id: agentId, userId: req.userId },
-      include: { 
-        channels: { include: { channel: true } },
-        user: true
-      }
-    })
-    
-    if (!agent) {
-      res.status(404).json({ error: 'Agent not found' })
-      return
+    const agent = await prisma.agent.findFirst({ where: { id: agentId, userId } });
+    if (!agent) return res.status(404).json({ error: 'Agent not found' });
+
+    // Plan-tier gating: free users cannot deploy cloud containers
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    if (user.plan === 'FREE') {
+      return res.status(403).json({
+        error: 'Cloud deployment requires a paid plan. Use the Local Connector or upgrade to Pro.',
+        upgradeUrl: '/billing',
+      });
     }
 
-    if (agent.status === 'RUNNING') {
-      res.status(400).json({ error: 'Agent is already running' })
-      return
+    // Check agent limit for cloud containers
+    const deployedCount = await prisma.agent.count({
+      where: { userId, containerId: { not: null } },
+    });
+    if (deployedCount >= user.maxAgents) {
+      return res.status(403).json({
+        error: `Cloud container limit reached (${user.maxAgents}). Upgrade your plan for more.`,
+        upgradeUrl: '/billing',
+      });
     }
 
-    // Determine which API keys to use based on user's preference
-    let apiKeys: Record<string, string | undefined>
-    if (agent.user.apiMode === 'byok') {
-      // Use user's own API keys
-      const userApiKeys = await getUserApiKeys(agent.userId)
-      apiKeys = {
-        openai: userApiKeys.openai,
-        anthropic: userApiKeys.anthropic,
-        google: userApiKeys.google,
-        deepseek: userApiKeys.deepseek,
-        grok: userApiKeys.grok,
-      }
-      
-      // Validate that user has the required API key for their selected model
-      const requiredProvider = getModelProvider(agent.model)
-      if (requiredProvider && !apiKeys[requiredProvider]) {
-        res.status(400).json({ 
-          error: `No ${requiredProvider.toUpperCase()} API key found. Please add your API key in Settings → API Keys.` 
-        })
-        return
-      }
-    } else {
-      // Use bundled API - check user limits and get available keys
-      const limitsCheck = await bundledApiService.checkUserLimits(agent.userId)
-      
-      if (!limitsCheck.canUse) {
-        res.status(429).json({ 
-          error: `Bundled API limit reached: ${limitsCheck.reason}`,
-          dailyUsage: limitsCheck.dailyUsage
-        })
-        return
-      }
-      
-      // Get required provider for the model
-      const requiredProvider = getModelProvider(agent.model)
-      if (!requiredProvider) {
-        res.status(400).json({ 
-          error: `Unsupported model: ${agent.model}` 
-        })
-        return
-      }
-      
-      // Get API key for the required provider
-      const bundledKey = await bundledApiService.getApiKey(requiredProvider)
-      if (!bundledKey) {
-        res.status(503).json({ 
-          error: `Bundled API for ${requiredProvider.toUpperCase()} is currently unavailable. Please try again later or switch to BYOK mode.` 
-        })
-        return
-      }
-      
-      apiKeys = {
-        [requiredProvider]: bundledKey,
-        // Include webhook URL for usage tracking
-        clawhq_webhook: `${process.env.API_BASE_URL}/api/bundled-api/record-usage`,
-        clawhq_user_id: agent.userId
-      }
+    const existing = await containerOrchestrator.getContainerInfo(userId, agentId);
+    if (existing && existing.status === 'running') {
+      return res.status(409).json({ error: 'Agent is already deployed' });
     }
 
-    const config: ContainerConfig = {
-      agentId: agent.id,
-      userId: agent.userId,
+    // Resolve API key
+    let resolvedKey = agent.apiKey;
+    if (agent.usesBundledApi) {
+      const bundledKeys: Record<string, string | undefined> = {
+        claude: process.env.CLAWHQ_CLAUDE_API_KEY,
+        openai: process.env.CLAWHQ_OPENAI_API_KEY,
+        gemini: process.env.CLAWHQ_GEMINI_API_KEY,
+        deepseek: process.env.CLAWHQ_DEEPSEEK_API_KEY,
+        grok: process.env.CLAWHQ_GROK_API_KEY,
+      };
+      resolvedKey = bundledKeys[agent.modelProvider] || null;
+      if (!resolvedKey) {
+        return res.status(503).json({ error: `Bundled API for ${agent.modelProvider} unavailable` });
+      }
+    }
+    if (!resolvedKey) {
+      return res.status(400).json({ error: 'No API key available' });
+    }
+
+    const config: AgentConfig = {
+      userId,
+      agentId,
+      agentName: agent.name,
+      modelProvider: agent.modelProvider as AgentConfig['modelProvider'],
       model: agent.model,
+      apiKey: resolvedKey,
+      channels: agent.channels,
       systemPrompt: agent.systemPrompt || undefined,
       temperature: agent.temperature,
       maxTokens: agent.maxTokens,
-      apiKeys,
-      channels: agent.channels.map(ca => ({
-        type: ca.channel.type,
-        config: ca.channel.config as Record<string, any>
-      }))
-    }
+    };
 
-    const containerId = await dockerService.createContainer(config)
-    
-    res.json({ 
-      success: true, 
-      message: 'Agent started successfully',
-      containerId
-    })
+    const containerInfo = await containerOrchestrator.createContainer(config);
+
+    res.json({
+      message: 'Agent deployed',
+      container: {
+        status: containerInfo.status,
+        port: containerInfo.port,
+      },
+    });
   } catch (error) {
-    console.error('Failed to start agent:', error)
-    res.status(500).json({ error: 'Failed to start agent', details: String(error) })
+    console.error('Error deploying agent:', error);
+    res.status(500).json({ error: 'Failed to deploy agent' });
   }
-})
+});
 
-router.post('/:id/stop', async (req: AuthRequest, res: Response) => {
+// ---------------------------------------------------------------------------
+// POST /api/agents/:agentId/start
+// ---------------------------------------------------------------------------
+
+router.post('/:agentId/start', authenticate, async (req: AuthRequest, res: Response) => {
   try {
-    const agentId = paramId(req)
-    const agent = await prisma.agent.findFirst({
-      where: { id: agentId, userId: req.userId }
-    })
-    
-    if (!agent) {
-      res.status(404).json({ error: 'Agent not found' })
-      return
-    }
+    const userId = req.userId!;
+    const agentId = req.params.agentId as string;
 
-    if (agent.status === 'STOPPED') {
-      res.status(400).json({ error: 'Agent is already stopped' })
-      return
-    }
+    const agent = await prisma.agent.findFirst({ where: { id: agentId, userId } });
+    if (!agent) return res.status(404).json({ error: 'Agent not found' });
 
-    await dockerService.stopContainer(agentId)
-    
-    res.json({ success: true, message: 'Agent stopped successfully' })
+    await containerOrchestrator.startContainer(userId, agentId);
+    res.json({ message: 'Agent starting' });
   } catch (error) {
-    console.error('Failed to stop agent:', error)
-    res.status(500).json({ error: 'Failed to stop agent', details: String(error) })
+    console.error('Error starting agent:', error);
+    res.status(500).json({ error: 'Failed to start agent' });
   }
-})
+});
 
-router.post('/:id/restart', async (req: AuthRequest, res: Response) => {
+// ---------------------------------------------------------------------------
+// POST /api/agents/:agentId/stop
+// ---------------------------------------------------------------------------
+
+router.post('/:agentId/stop', authenticate, async (req: AuthRequest, res: Response) => {
   try {
-    const agentId = paramId(req)
-    const agent = await prisma.agent.findFirst({
-      where: { id: agentId, userId: req.userId }
-    })
-    
-    if (!agent) {
-      res.status(404).json({ error: 'Agent not found' })
-      return
-    }
+    const userId = req.userId!;
+    const agentId = req.params.agentId as string;
 
-    await dockerService.restartContainer(agentId)
-    
-    res.json({ success: true, message: 'Agent restarted successfully' })
+    const agent = await prisma.agent.findFirst({ where: { id: agentId, userId } });
+    if (!agent) return res.status(404).json({ error: 'Agent not found' });
+
+    await containerOrchestrator.stopContainer(userId, agentId);
+    res.json({ message: 'Agent stopped' });
   } catch (error) {
-    console.error('Failed to restart agent:', error)
-    res.status(500).json({ error: 'Failed to restart agent', details: String(error) })
+    console.error('Error stopping agent:', error);
+    res.status(500).json({ error: 'Failed to stop agent' });
   }
-})
+});
 
-router.get('/:id/logs', async (req: AuthRequest, res: Response) => {
+// ---------------------------------------------------------------------------
+// POST /api/agents/:agentId/restart
+// ---------------------------------------------------------------------------
+
+router.post('/:agentId/restart', authenticate, async (req: AuthRequest, res: Response) => {
   try {
-    const logs = await prisma.agentLog.findMany({
-      where: { agent: { id: paramId(req), userId: req.userId } },
-      orderBy: { createdAt: 'desc' },
-      take: 100,
-    })
-    res.json({ logs })
-  } catch {
-    res.status(500).json({ error: 'Internal server error' })
-  }
-})
+    const userId = req.userId!;
+    const agentId = req.params.agentId as string;
 
-router.get('/:id/status', async (req: AuthRequest, res: Response) => {
-  try {
-    const agent = await prisma.agent.findFirst({
-      where: { id: paramId(req), userId: req.userId }
-    })
-    
-    if (!agent) {
-      res.status(404).json({ error: 'Agent not found' })
-      return
-    }
+    const agent = await prisma.agent.findFirst({ where: { id: agentId, userId } });
+    if (!agent) return res.status(404).json({ error: 'Agent not found' });
 
-    let containerStatus = 'unknown'
     if (agent.containerId) {
-      containerStatus = await dockerService.getContainerStatus(agent.containerId)
+      await containerOrchestrator.stopContainer(userId, agentId);
     }
+    await containerOrchestrator.startContainer(userId, agentId);
+    res.json({ message: 'Agent restarting' });
+  } catch (error) {
+    console.error('Error restarting agent:', error);
+    res.status(500).json({ error: 'Failed to restart agent' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/agents/:agentId — single agent detail
+// ---------------------------------------------------------------------------
+
+router.get('/:agentId', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.userId!;
+    const agentId = req.params.agentId as string;
+
+    const agent = await prisma.agent.findFirst({
+      where: { id: agentId, userId },
+      include: {
+        agentChannels: { include: { channel: true } },
+        logs: { orderBy: { createdAt: 'desc' }, take: 100 },
+      },
+    });
+    if (!agent) return res.status(404).json({ error: 'Agent not found' });
+
+    const containerInfo = await containerOrchestrator.getContainerInfo(userId, agent.id);
 
     res.json({
       agent: {
         id: agent.id,
         name: agent.name,
-        status: agent.status,
-        containerId: agent.containerId,
-        containerStatus,
-        lastActiveAt: agent.lastActiveAt,
-        totalMessages: agent.totalMessages,
-        totalTokens: agent.totalTokens
-      }
-    })
-  } catch (error) {
-    console.error('Failed to get agent status:', error)
-    res.status(500).json({ error: 'Failed to get agent status' })
-  }
-})
-
-router.get('/:id/container-logs', async (req: AuthRequest, res: Response) => {
-  try {
-    const agent = await prisma.agent.findFirst({
-      where: { id: paramId(req), userId: req.userId }
-    })
-    
-    if (!agent?.containerId) {
-      res.status(404).json({ error: 'Container not found' })
-      return
-    }
-
-    const lines = parseInt(req.query.lines as string) || 100
-    const logs = await dockerService.getContainerLogs(agent.containerId, lines)
-    
-    res.json({ logs })
-  } catch (error) {
-    console.error('Failed to get container logs:', error)
-    res.status(500).json({ error: 'Failed to get container logs' })
-  }
-})
-
-// Quick deploy endpoint - the main "30-second deploy" functionality
-router.post('/deploy', async (req: AuthRequest, res: Response) => {
-  try {
-    const { name, model = 'claude-sonnet-4-20250514', systemPrompt, channels } = req.body
-    
-    if (!name || !channels || channels.length === 0) {
-      res.status(400).json({ error: 'Name and at least one channel are required' })
-      return
-    }
-
-    const user = await prisma.user.findUnique({ where: { id: req.userId } })
-    const agentCount = await prisma.agent.count({ where: { userId: req.userId } })
-
-    if (user && agentCount >= user.maxAgents) {
-      res.status(403).json({ error: 'Agent limit reached. Upgrade your plan.' })
-      return
-    }
-
-    // Create agent in database
-    const agent = await prisma.agent.create({
-      data: {
-        name,
-        model,
-        systemPrompt,
-        userId: req.userId!,
-        status: 'DEPLOYING'
-      },
-    })
-
-    // Create channels
-    const channelPromises = channels.map(async (channelData: any) => {
-      const channel = await prisma.channel.create({
-        data: {
-          type: channelData.type,
-          config: channelData.config,
-          userId: req.userId!
-        }
-      })
-
-      await prisma.channelAgent.create({
-        data: {
-          channelId: channel.id,
-          agentId: agent.id
-        }
-      })
-
-      return { type: channelData.type, config: channelData.config }
-    })
-
-    const createdChannels = await Promise.all(channelPromises)
-
-    // Determine which API keys to use based on user's preference
-    let apiKeys: Record<string, string | undefined>
-    if (user && user.apiMode === 'byok') {
-      // Use user's own API keys
-      const userApiKeys = await getUserApiKeys(req.userId!)
-      apiKeys = {
-        openai: userApiKeys.openai,
-        anthropic: userApiKeys.anthropic,
-        google: userApiKeys.google,
-        deepseek: userApiKeys.deepseek,
-        grok: userApiKeys.grok,
-      }
-      
-      // Validate that user has the required API key for their selected model
-      const requiredProvider = getModelProvider(model)
-      if (requiredProvider && !apiKeys[requiredProvider]) {
-        res.status(400).json({ 
-          error: `No ${requiredProvider.toUpperCase()} API key found. Please add your API key in Settings → API Keys.` 
-        })
-        return
-      }
-    } else {
-      // Use bundled API - check user limits and get available keys
-      const limitsCheck = await bundledApiService.checkUserLimits(req.userId!)
-      
-      if (!limitsCheck.canUse) {
-        res.status(429).json({ 
-          error: `Bundled API limit reached: ${limitsCheck.reason}`,
-          dailyUsage: limitsCheck.dailyUsage
-        })
-        return
-      }
-      
-      // Get required provider for the model
-      const requiredProvider = getModelProvider(model)
-      if (!requiredProvider) {
-        res.status(400).json({ 
-          error: `Unsupported model: ${model}` 
-        })
-        return
-      }
-      
-      // Get API key for the required provider
-      const bundledKey = await bundledApiService.getApiKey(requiredProvider)
-      if (!bundledKey) {
-        res.status(503).json({ 
-          error: `Bundled API for ${requiredProvider.toUpperCase()} is currently unavailable. Please try again later or switch to BYOK mode.` 
-        })
-        return
-      }
-      
-      apiKeys = {
-        [requiredProvider]: bundledKey,
-        // Include webhook URL for usage tracking
-        clawhq_webhook: `${process.env.API_BASE_URL}/api/bundled-api/record-usage`,
-        clawhq_user_id: req.userId!
-      }
-    }
-
-    // Deploy container
-    const config: ContainerConfig = {
-      agentId: agent.id,
-      userId: agent.userId,
-      model: agent.model,
-      systemPrompt: agent.systemPrompt || undefined,
-      apiKeys,
-      channels: createdChannels
-    }
-
-    const containerId = await dockerService.createContainer(config)
-
-    res.status(201).json({
-      success: true,
-      message: 'Agent deployed successfully!',
-      agent: {
-        id: agent.id,
-        name: agent.name,
+        modelProvider: agent.modelProvider,
         model: agent.model,
-        status: 'RUNNING',
-        containerId
-      }
-    })
+        deployMode: agent.deployMode,
+        status: agent.status,
+        containerStatus: containerInfo?.status || (agent.containerId ? 'stopped' : 'not-deployed'),
+        containerPort: containerInfo?.port || null,
+        systemPrompt: agent.systemPrompt,
+        temperature: agent.temperature,
+        maxTokens: agent.maxTokens,
+        skills: agent.skills || [],
+        totalMessages: agent.totalMessages,
+        totalTokens: agent.totalTokens,
+        createdAt: agent.createdAt,
+        channels: agent.agentChannels.map((ac: any) => ({ channel: ac.channel })),
+        logs: agent.logs,
+      },
+    });
   } catch (error) {
-    console.error('Failed to deploy agent:', error)
-    res.status(500).json({ 
-      error: 'Failed to deploy agent', 
-      details: String(error) 
-    })
+    console.error('Error fetching agent:', error);
+    res.status(500).json({ error: 'Failed to fetch agent' });
   }
-})
+});
 
-export default router
+// ---------------------------------------------------------------------------
+// PATCH /api/agents/:agentId — update agent config
+// ---------------------------------------------------------------------------
+
+router.patch('/:agentId', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.userId!;
+    const agentId = req.params.agentId as string;
+
+    const agent = await prisma.agent.findFirst({ where: { id: agentId, userId } });
+    if (!agent) return res.status(404).json({ error: 'Agent not found' });
+
+    const { name, model, systemPrompt, temperature, maxTokens, skills } = req.body;
+    const data: any = {};
+
+    if (name !== undefined) {
+      if (typeof name !== 'string' || name.length < 1 || name.length > 50) {
+        return res.status(400).json({ error: 'Name must be 1-50 characters' });
+      }
+      data.name = name.trim();
+    }
+    if (model !== undefined) data.model = model;
+    if (systemPrompt !== undefined) {
+      if (systemPrompt && systemPrompt.length > 10000) {
+        return res.status(400).json({ error: 'System prompt too long (max 10,000 chars)' });
+      }
+      data.systemPrompt = systemPrompt || null;
+    }
+    if (temperature !== undefined) data.temperature = Math.max(0, Math.min(2, Number(temperature) || 0));
+    if (maxTokens !== undefined) data.maxTokens = Math.max(1, Math.min(128000, Number(maxTokens) || 4096));
+    if (skills !== undefined) {
+      if (!Array.isArray(skills)) return res.status(400).json({ error: 'Skills must be an array' });
+      data.skills = skills;
+    }
+
+    const updated = await prisma.agent.update({ where: { id: agentId }, data });
+
+    // For CLOUD agents with running containers, flag that config needs re-apply
+    const configChanged = data.model || data.systemPrompt !== undefined || data.temperature !== undefined || data.maxTokens !== undefined || data.skills;
+    const needsReapply = agent.deployMode === 'CLOUD' && agent.containerId && configChanged;
+
+    res.json({
+      agent: updated,
+      configDirty: !!needsReapply,
+      hint: needsReapply ? 'Config changed. Apply via POST /api/agents/:id/config/apply to update running container.' : undefined,
+    });
+  } catch (error) {
+    console.error('Error updating agent:', error);
+    res.status(500).json({ error: 'Failed to update agent' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// DELETE /api/agents/:agentId — destroy agent + container
+// ---------------------------------------------------------------------------
+
+router.delete('/:agentId', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.userId!;
+    const agentId = req.params.agentId as string;
+
+    const agent = await prisma.agent.findFirst({ where: { id: agentId, userId } });
+    if (!agent) return res.status(404).json({ error: 'Agent not found' });
+
+    // Destroy container (safe if none exists)
+    try { await containerOrchestrator.destroyContainer(userId, agentId); } catch {}
+
+    await prisma.agent.delete({ where: { id: agentId } });
+    res.json({ message: 'Agent deleted' });
+  } catch (error) {
+    console.error('Error deleting agent:', error);
+    res.status(500).json({ error: 'Failed to delete agent' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/agents/:agentId/stats — live container metrics
+// ---------------------------------------------------------------------------
+
+router.get('/:agentId/stats', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.userId!;
+    const agentId = req.params.agentId as string;
+
+    const agent = await prisma.agent.findFirst({ where: { id: agentId, userId } });
+    if (!agent?.containerId) {
+      return res.status(404).json({ error: 'No running container' });
+    }
+
+    const stats = await containerOrchestrator.getContainerStats(agent.containerId);
+    res.json({ stats });
+  } catch (error) {
+    console.error('Error fetching stats:', error);
+    res.status(500).json({ error: 'Failed to fetch stats' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/agents/:agentId/logs — container logs
+// ---------------------------------------------------------------------------
+
+router.get('/:agentId/logs', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.userId!;
+    const agentId = req.params.agentId as string;
+    const lines = Math.min(parseInt(req.query.lines as string) || 100, 500);
+
+    const agent = await prisma.agent.findFirst({ where: { id: agentId, userId } });
+    if (!agent?.containerId) {
+      return res.status(404).json({ error: 'No container found' });
+    }
+
+    const logs = await containerOrchestrator.getContainerLogs(agent.containerId, lines);
+    res.json({ logs });
+  } catch (error) {
+    console.error('Error fetching logs:', error);
+    res.status(500).json({ error: 'Failed to fetch logs' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Helper: Build AgentSettings from DB agent + channels
+// ---------------------------------------------------------------------------
+
+async function buildAgentSettings(agent: any): Promise<AgentSettings> {
+  // Fetch connected channels with their configs
+  const agentChannels = await prisma.channelAgent.findMany({
+    where: { agentId: agent.id },
+    include: { channel: true },
+  });
+
+  const channels: ChannelConfig[] = agentChannels.map((ac: any) => ({
+    type: ac.channel.type as string,
+    config: (ac.channel.config || {}) as Record<string, any>,
+    isActive: ac.channel.isActive,
+  }));
+
+  return {
+    agentId: agent.id,
+    agentName: agent.name,
+    modelProvider: agent.modelProvider,
+    model: agent.model,
+    deployMode: agent.deployMode,
+    usesBundledApi: agent.usesBundledApi,
+    apiKey: agent.apiKey,
+    systemPrompt: agent.systemPrompt,
+    temperature: agent.temperature,
+    maxTokens: agent.maxTokens,
+    skills: Array.isArray(agent.skills) ? agent.skills : [],
+    webhookToken: agent.webhookToken,
+    channels,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// GET /api/agents/:agentId/config — generated OpenClaw config.yaml
+// ---------------------------------------------------------------------------
+
+router.get('/:agentId/config', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.userId!;
+    const agentId = req.params.agentId as string;
+    const format = (req.query.format as string) || 'yaml';
+
+    const agent = await prisma.agent.findFirst({ where: { id: agentId, userId } });
+    if (!agent) return res.status(404).json({ error: 'Agent not found' });
+
+    const settings = await buildAgentSettings(agent);
+
+    if (format === 'snippet' && agent.deployMode === 'LOCAL') {
+      // Local connector snippet only
+      const snippet = generateLocalSnippet(settings);
+      return res.json({ config: snippet, format: 'snippet', deployMode: 'LOCAL' });
+    }
+
+    const yaml = generateOpenClawConfig(settings);
+    const validation = validateConfig(yaml);
+
+    if (format === 'download') {
+      res.setHeader('Content-Type', 'text/yaml');
+      res.setHeader('Content-Disposition', `attachment; filename="config-${agent.name.replace(/[^a-zA-Z0-9]/g, '-')}.yaml"`);
+      return res.send(yaml);
+    }
+
+    res.json({
+      config: yaml,
+      format: 'yaml',
+      deployMode: agent.deployMode,
+      validation,
+      generatedAt: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error('Error generating config:', error);
+    res.status(500).json({ error: 'Failed to generate config' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/agents/:agentId/config/apply — regenerate + apply config to running container
+// ---------------------------------------------------------------------------
+
+router.post('/:agentId/config/apply', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.userId!;
+    const agentId = req.params.agentId as string;
+
+    const agent = await prisma.agent.findFirst({ where: { id: agentId, userId } });
+    if (!agent) return res.status(404).json({ error: 'Agent not found' });
+
+    if (agent.deployMode !== 'CLOUD') {
+      return res.json({
+        message: 'Config generated. For local/dashboard agents, download and apply manually.',
+        applied: false,
+      });
+    }
+
+    if (!agent.containerId) {
+      return res.status(400).json({ error: 'No running container. Deploy the agent first.' });
+    }
+
+    const settings = await buildAgentSettings(agent);
+    const yaml = generateOpenClawConfig(settings);
+    const validation = validateConfig(yaml);
+
+    if (!validation.valid) {
+      return res.status(400).json({
+        error: 'Generated config has validation errors',
+        validationErrors: validation.errors,
+      });
+    }
+
+    // Write new config to the container's config directory
+    const agentConfig: AgentConfig = {
+      userId,
+      agentId,
+      agentName: agent.name,
+      modelProvider: agent.modelProvider as AgentConfig['modelProvider'],
+      model: agent.model,
+      apiKey: agent.apiKey || '',
+      channels: agent.channels as string[],
+      systemPrompt: agent.systemPrompt || undefined,
+      temperature: agent.temperature,
+      maxTokens: agent.maxTokens,
+      webhookToken: agent.webhookToken || undefined,
+    };
+    containerOrchestrator.writeConfigForAgent(agentConfig, agent.containerPort || 18789);
+
+    // Restart the container to pick up the new config
+    try {
+      await containerOrchestrator.stopContainer(userId, agentId);
+      await containerOrchestrator.startContainer(userId, agentId);
+    } catch (restartErr: any) {
+      return res.status(500).json({
+        error: `Config written but restart failed: ${restartErr.message}`,
+        configWritten: true,
+      });
+    }
+
+    // Log the config change
+    try {
+      await prisma.agentLog.create({
+        data: {
+          agentId,
+          level: 'info',
+          message: 'Configuration updated and applied via ClawHQ dashboard',
+        },
+      });
+    } catch {}
+
+    res.json({
+      message: 'Config applied and agent restarted',
+      applied: true,
+      validation,
+    });
+  } catch (error) {
+    console.error('Error applying config:', error);
+    res.status(500).json({ error: 'Failed to apply config' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/agents/:agentId/webhook — agent container callbacks
+// ---------------------------------------------------------------------------
+
+router.post('/:agentId/webhook', async (req: AuthRequest, res: Response) => {
+  try {
+    const agentId = req.params.agentId as string;
+    const webhookToken = req.headers['x-webhook-token'] as string | undefined;
+    const data = req.body;
+
+    // Validate webhook token
+    if (!webhookToken) {
+      return res.status(401).json({ error: 'Missing webhook token' });
+    }
+
+    const agent = await prisma.agent.findUnique({
+      where: { id: agentId },
+      select: { webhookToken: true }
+    });
+
+    if (!agent?.webhookToken) {
+      return res.status(401).json({ error: 'Invalid agent' });
+    }
+
+    try {
+      const valid = crypto.timingSafeEqual(
+        Buffer.from(agent.webhookToken),
+        Buffer.from(webhookToken)
+      );
+      if (!valid) {
+        return res.status(401).json({ error: 'Invalid webhook token' });
+      }
+    } catch {
+      return res.status(401).json({ error: 'Invalid webhook token' });
+    }
+
+    if (data.status) {
+      await prisma.agent.update({
+        where: { id: agentId },
+        data: { lastHeartbeat: new Date() },
+      });
+    }
+
+    res.json({ received: true });
+  } catch (error) {
+    console.error('Error handling webhook:', error);
+    res.status(500).json({ error: 'Failed to process webhook' });
+  }
+});
+
+export default router;

@@ -53,10 +53,53 @@ router.get('/profile', async (req: AuthRequest, res: Response) => {
 
 router.patch('/profile', async (req: AuthRequest, res: Response) => {
   try {
-    const { name, businessName, brandColor, customDomain } = req.body
+    const { name, businessName, brandColor, customDomain, logoUrl } = req.body
+    const data: Record<string, unknown> = {}
+    if (name !== undefined) data.name = name
+    if (businessName !== undefined) data.businessName = businessName
+    if (brandColor !== undefined) data.brandColor = brandColor
+    if (customDomain !== undefined) data.customDomain = customDomain
+    if (logoUrl !== undefined) data.logoUrl = logoUrl
     const user = await prisma.user.update({
       where: { id: req.userId },
-      data: { name, businessName, brandColor, customDomain },
+      data,
+    })
+    res.json({ user })
+  } catch {
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+router.post('/profile/logo', async (req: AuthRequest, res: Response) => {
+  try {
+    const { logo } = req.body // base64 data URI (e.g., "data:image/png;base64,...")
+    if (!logo || typeof logo !== 'string') {
+      res.status(400).json({ error: 'Logo data URI required' }); return
+    }
+    // Validate it's a data URI and under 2MB
+    if (!logo.startsWith('data:image/')) {
+      res.status(400).json({ error: 'Must be a data:image/* URI' }); return
+    }
+    const base64Part = logo.split(',')[1] || ''
+    const sizeBytes = Math.ceil(base64Part.length * 0.75)
+    if (sizeBytes > 2 * 1024 * 1024) {
+      res.status(400).json({ error: 'Logo must be under 2MB' }); return
+    }
+    const user = await prisma.user.update({
+      where: { id: req.userId },
+      data: { logoUrl: logo },
+    })
+    res.json({ user })
+  } catch {
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+router.delete('/profile/logo', async (req: AuthRequest, res: Response) => {
+  try {
+    const user = await prisma.user.update({
+      where: { id: req.userId },
+      data: { logoUrl: null },
     })
     res.json({ user })
   } catch {

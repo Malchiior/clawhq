@@ -1,5 +1,5 @@
 [phases.setup]
-nixPkgs = ["nodejs_20", "npm-9_x"]
+nixPkgs = ["nodejs_20", "npm-9_x", "openssl_3"]
 
 [phases.install]
 cmds = ["npm ci"]
@@ -8,4 +8,4 @@ cmds = ["npm ci"]
 cmds = ["npx prisma generate", "npm run build"]
 
 [start]
-cmd = "npm start"
+cmd = "npx prisma db push && npm start"

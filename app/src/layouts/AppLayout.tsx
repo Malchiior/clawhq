@@ -1,17 +1,17 @@
 import { Outlet } from 'react-router-dom'
 import Sidebar from '../components/Sidebar'
-import TopBar from '../components/TopBar'
+import FloatingChat from '../components/FloatingChat'
 
 export default function AppLayout() {
   return (
-    <div className="flex h-screen bg-navy overflow-hidden">
+    <div className="flex min-h-screen" style={{ background: 'var(--bg)' }}>
       <Sidebar />
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <TopBar />
-        <main className="flex-1 overflow-y-auto p-6">
+      <div className="flex-1 ml-[220px] flex flex-col min-h-screen">
+        <main className="flex-1 p-6 lg:p-8 max-w-[1200px] overflow-x-hidden">
           <Outlet />
         </main>
       </div>
+      <FloatingChat />
     </div>
   )
 }

@@ -5,6 +5,7 @@ import { apiFetch } from '../lib/api'
 import TelegramConfigModal from '../components/TelegramConfigModal'
 import WhatsAppConfigModal from '../components/WhatsAppConfigModal'
 import DiscordConfigModal from '../components/DiscordConfigModal'
+import SlackConfigModal from '../components/SlackConfigModal'
 
 interface Channel {
   id: string
@@ -21,20 +22,20 @@ interface Channel {
 }
 
 const channelIcons: Record<string, string> = {
-  TELEGRAM: '✈️',
-  WHATSAPP: '📱',
-  DISCORD: '🎮',
-  SLACK: '💬',
-  IMESSAGE: '🍎',
-  TEAMS: '🏢',
-  IRC: '📡',
+  TELEGRAM: 'âœˆï¸',
+  WHATSAPP: 'ðŸ“±',
+  DISCORD: 'ðŸŽ®',
+  SLACK: 'ðŸ’¬',
+  IMESSAGE: 'ðŸŽ',
+  TEAMS: 'ðŸ¢',
+  IRC: 'ðŸ“¡',
 }
 
 const availableChannels = [
   { type: 'TELEGRAM', name: 'Telegram', desc: 'Connect your own Telegram bot', color: 'bg-blue-500/10 text-blue-400' },
   { type: 'WHATSAPP', name: 'WhatsApp', desc: 'WhatsApp Business API', color: 'bg-green-500/10 text-green-400' },
   { type: 'DISCORD', name: 'Discord', desc: 'Discord bot integration', color: 'bg-indigo-500/10 text-indigo-400' },
-  { type: 'SLACK', name: 'Slack', desc: 'Slack workspace app', color: 'bg-purple-500/10 text-purple-400', soon: true },
+  { type: 'SLACK', name: 'Slack', desc: 'Slack workspace app', color: 'bg-purple-500/10 text-purple-400' },
   { type: 'IMESSAGE', name: 'iMessage', desc: 'Apple iMessage relay', color: 'bg-gray-500/10 text-gray-400', soon: true },
   { type: 'TEAMS', name: 'MS Teams', desc: 'Microsoft Teams bot', color: 'bg-blue-600/10 text-blue-300', soon: true },
 ]
@@ -66,8 +67,8 @@ export default function ChannelsPage() {
         body: JSON.stringify({ type, config: {} }) 
       })
       
-      // For Telegram, WhatsApp, and Discord channels, open configuration modal
-      if (type === 'TELEGRAM' || type === 'WHATSAPP' || type === 'DISCORD') {
+      // For Telegram, WhatsApp, Discord, and Slack channels, open configuration modal
+      if (type === 'TELEGRAM' || type === 'WHATSAPP' || type === 'DISCORD' || type === 'SLACK') {
         setConfigModal({ isOpen: true, channelId: response.channel.id, type })
         setShowAdd(false)
       } else {
@@ -119,7 +120,7 @@ export default function ChannelsPage() {
       {showAdd && (
         <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="bg-card border border-border rounded-xl p-5">
           <h2 className="font-semibold text-text mb-4">Connect a Platform</h2>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {availableChannels.map(ch => (
               <button key={ch.type} onClick={() => !ch.soon && addChannel(ch.type)} disabled={ch.soon} className={`text-left p-4 rounded-lg border border-border hover:border-border-light transition-all ${ch.soon ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}>
                 <div className="flex items-center gap-3 mb-2">
@@ -157,7 +158,7 @@ export default function ChannelsPage() {
               <motion.div key={ch.id} variants={item} className="bg-card border border-border rounded-xl p-5 hover:border-border-light transition-colors">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-4">
-                    <span className="text-3xl">{channelIcons[ch.type] || '📡'}</span>
+                    <span className="text-3xl">{channelIcons[ch.type] || 'ðŸ“¡'}</span>
                     <div>
                       <div className="flex items-center gap-2">
                         <h3 className="font-semibold text-text">{displayName}</h3>
@@ -202,7 +203,7 @@ export default function ChannelsPage() {
                       </span>
                     )}
                     
-                    {(ch.type === 'TELEGRAM' || ch.type === 'WHATSAPP' || ch.type === 'DISCORD') && (
+                    {(ch.type === 'TELEGRAM' || ch.type === 'WHATSAPP' || ch.type === 'DISCORD' || ch.type === 'SLACK') && (
                       <button 
                         onClick={() => openConfig(ch.id, ch.type)}
                         className="flex items-center gap-1 text-xs text-primary hover:text-primary-hover transition-colors"
@@ -242,6 +243,13 @@ export default function ChannelsPage() {
 
       <DiscordConfigModal
         isOpen={configModal.isOpen && configModal.type === 'DISCORD'}
+        onClose={() => setConfigModal({ isOpen: false, channelId: '', type: '' })}
+        onSuccess={refreshChannels}
+        channelId={configModal.channelId}
+      />
+
+      <SlackConfigModal
+        isOpen={configModal.isOpen && configModal.type === 'SLACK'}
         onClose={() => setConfigModal({ isOpen: false, channelId: '', type: '' })}
         onSuccess={refreshChannels}
         channelId={configModal.channelId}

@@ -1,10 +1,13 @@
 import { useParams, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { Bot, Square, Play, RotateCcw, Settings, Terminal, Activity, MessageSquare, Zap, Clock, AlertCircle, CheckCircle, Info, Trash2, ArrowLeft, Loader2, Brain } from 'lucide-react'
+import { Bot, Square, Play, RotateCcw, Settings, Terminal, Activity, MessageSquare, Zap, Clock, AlertCircle, CheckCircle, Info, Trash2, ArrowLeft, Loader2, Brain, Puzzle, Check, Rocket } from 'lucide-react'
 import { useState, useEffect, useCallback } from 'react'
 import { apiFetch } from '../lib/api'
 import HealthMonitor from '../components/HealthMonitor'
 import MemoryManager from '../components/MemoryManager'
+import ChatPanel from '../components/ChatPanel'
+import RelaySetup from '../components/RelaySetup'
+import ConfigPreview from '../components/ConfigPreview'
 
 interface AgentLog {
   id: string
@@ -24,15 +27,59 @@ interface Agent {
   id: string
   name: string
   model: string
+  deployMode?: string
   status: string
+  containerStatus: string
+  containerPort: number | null
   systemPrompt: string | null
   temperature: number
   maxTokens: number
+  skills: string[]
   totalMessages: number
   totalTokens: number
   createdAt: string
   channels: { channel: Channel }[]
   logs: AgentLog[]
+}
+
+interface SkillDef {
+  id: string
+  name: string
+  description: string
+  icon: string
+  category: 'productivity' | 'communication' | 'development' | 'data' | 'automation'
+  popular?: boolean
+}
+
+const SKILL_CATALOG: SkillDef[] = [
+  { id: 'web-search', name: 'Web Search', description: 'Search the web using Brave Search API for real-time information', icon: '🔍', category: 'productivity', popular: true },
+  { id: 'web-fetch', name: 'Web Fetch', description: 'Fetch and extract readable content from any URL', icon: '🌐', category: 'productivity', popular: true },
+  { id: 'code-exec', name: 'Code Execution', description: 'Run shell commands and scripts in a sandboxed environment', icon: '⚡', category: 'development', popular: true },
+  { id: 'file-manager', name: 'File Manager', description: 'Read, write, and edit files in the agent workspace', icon: '📁', category: 'development', popular: true },
+  { id: 'browser', name: 'Browser Control', description: 'Automate web browsers for scraping and interaction', icon: '🖥️', category: 'automation' },
+  { id: 'cron', name: 'Scheduled Tasks', description: 'Create and manage cron jobs and reminders', icon: '⏰', category: 'automation', popular: true },
+  { id: 'memory', name: 'Long-Term Memory', description: 'Persistent memory across sessions with semantic search', icon: '🧠', category: 'productivity', popular: true },
+  { id: 'image-gen', name: 'Image Generation', description: 'Generate images with DALL-E, Stable Diffusion, or Midjourney', icon: '🎨', category: 'data' },
+  { id: 'image-vision', name: 'Image Analysis', description: 'Analyze and describe images using vision models', icon: '👁️', category: 'data' },
+  { id: 'tts', name: 'Text-to-Speech', description: 'Convert text to natural speech with ElevenLabs', icon: '🔊', category: 'communication' },
+  { id: 'email', name: 'Email Integration', description: 'Send and read emails via SMTP/IMAP', icon: '📧', category: 'communication' },
+  { id: 'calendar', name: 'Calendar', description: 'Read and manage Google Calendar events', icon: '📅', category: 'productivity' },
+  { id: 'database', name: 'Database', description: 'Query and manage PostgreSQL, MySQL, or SQLite databases', icon: '🗃️', category: 'data' },
+  { id: 'api-builder', name: 'API Builder', description: 'Create custom API endpoints and webhooks', icon: '🔌', category: 'development' },
+  { id: 'github', name: 'GitHub', description: 'Manage repos, PRs, issues, and deployments', icon: '🐙', category: 'development' },
+  { id: 'notion', name: 'Notion', description: 'Read and write Notion pages and databases', icon: '📝', category: 'productivity' },
+  { id: 'slack-tools', name: 'Slack Tools', description: 'Advanced Slack workspace management and automation', icon: '💬', category: 'communication' },
+  { id: 'analytics', name: 'Analytics', description: 'Track and visualize usage metrics and KPIs', icon: '📊', category: 'data' },
+  { id: 'pdf', name: 'PDF Processing', description: 'Read, generate, and manipulate PDF documents', icon: '📄', category: 'data' },
+  { id: 'scraper', name: 'Web Scraper', description: 'Extract structured data from websites at scale with Apify', icon: '🕷️', category: 'automation' },
+]
+
+const CATEGORY_LABELS: Record<string, string> = {
+  productivity: '🎯 Productivity',
+  communication: '💬 Communication',
+  development: '🛠️ Development',
+  data: '📊 Data & Media',
+  automation: '⚙️ Automation',
 }
 
 const statusColors: Record<string, { dot: string; text: string; label: string }> = {
@@ -52,10 +99,20 @@ export default function AgentDetailPage() {
   const [logs, setLogs] = useState<AgentLog[]>([])
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
-  const [tab, setTab] = useState<'logs' | 'config' | 'health' | 'memory'>('logs')
+  // Support ?tab=connect from NewAgentPage redirect
+  const initialTab = (() => {
+    const params = new URLSearchParams(window.location.search)
+    const t = params.get('tab')
+    if (t && ['chat', 'logs', 'config', 'skills', 'connect', 'health', 'memory'].includes(t)) return t as any
+    return 'chat'
+  })()
+  const [tab, setTab] = useState<'chat' | 'logs' | 'config' | 'skills' | 'connect' | 'health' | 'memory'>(initialTab)
   const [configForm, setConfigForm] = useState({ systemPrompt: '', temperature: 0.7, maxTokens: 4096, name: '', model: '' })
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [deleteConfirm, setDeleteConfirm] = useState(false)
+  const [enabledSkills, setEnabledSkills] = useState<string[]>([])
+  const [skillsSaving, setSkillsSaving] = useState(false)
+  const [skillsFilter, setSkillsFilter] = useState('')
 
   const fetchAgent = useCallback(async () => {
     try {
@@ -69,6 +126,7 @@ export default function AgentDetailPage() {
         name: data.agent.name,
         model: data.agent.model,
       })
+      setEnabledSkills(data.agent.skills || [])
     } catch {
       // Agent not found or error
     } finally {
@@ -114,6 +172,21 @@ export default function AgentDetailPage() {
     }
   }
 
+  const toggleSkill = (skillId: string) => {
+    setEnabledSkills(prev => prev.includes(skillId) ? prev.filter(s => s !== skillId) : [...prev, skillId])
+  }
+
+  const saveSkills = async () => {
+    setSkillsSaving(true)
+    try {
+      await apiFetch(`/api/agents/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ skills: enabledSkills }),
+      })
+    } catch { /* */ }
+    setSkillsSaving(false)
+  }
+
   const deleteAgent = async () => {
     try {
       await apiFetch(`/api/agents/${id}`, { method: 'DELETE' })
@@ -133,13 +206,13 @@ export default function AgentDetailPage() {
     return (
       <div className="flex flex-col items-center justify-center h-64 gap-4">
         <p className="text-text-secondary">Agent not found</p>
-        <button onClick={() => navigate('/agents')} className="text-primary hover:underline text-sm">← Back to Agents</button>
+        <button onClick={() => navigate('/agents')} className="text-primary hover:underline text-sm">â† Back to Agents</button>
       </div>
     )
   }
 
   const status = statusColors[agent.status] || statusColors.STOPPED
-  const uptime = agent.status === 'RUNNING' ? getUptime(agent.createdAt) : '—'
+  const uptime = agent.status === 'RUNNING' ? getUptime(agent.createdAt) : 'â€”'
 
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
@@ -162,11 +235,16 @@ export default function AgentDetailPage() {
                 <span className={`text-sm font-medium ${status.text}`}>{status.label}</span>
               </div>
             </div>
-            <p className="text-sm text-text-secondary mt-0.5">{agent.model} · ID: {agent.id.slice(0, 8)}...</p>
+            <p className="text-sm text-text-secondary mt-0.5">{agent.model} Â· ID: {agent.id.slice(0, 8)}...</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {agent.status === 'RUNNING' ? (
+          {agent.containerStatus === 'not-deployed' ? (
+            /* Agent created but never deployed — show Deploy button */
+            <button onClick={() => doAction('deploy')} disabled={!!actionLoading} className="flex items-center gap-2 bg-success hover:bg-success/80 text-white rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50">
+              {actionLoading === 'deploy' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Rocket className="w-4 h-4" />} Deploy
+            </button>
+          ) : agent.status === 'RUNNING' ? (
             <button onClick={() => doAction('stop')} disabled={!!actionLoading} className="flex items-center gap-2 bg-card border border-border rounded-lg px-3 py-2 text-sm text-text-secondary hover:text-error hover:border-error/30 transition-colors disabled:opacity-50">
               {actionLoading === 'stop' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Square className="w-4 h-4" />} Stop
             </button>
@@ -184,8 +262,24 @@ export default function AgentDetailPage() {
         </div>
       </div>
 
+      {/* Deploy Status Banner */}
+      {agent.containerStatus === 'not-deployed' && (
+        <div className="bg-accent/10 border border-accent/30 rounded-xl p-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Rocket className="w-5 h-5 text-accent" />
+            <div>
+              <p className="text-sm font-medium text-text">Agent not yet deployed</p>
+              <p className="text-xs text-text-secondary">Deploy to a cloud container or connect via Local Connector to start chatting.</p>
+            </div>
+          </div>
+          <button onClick={() => doAction('deploy')} disabled={!!actionLoading} className="flex items-center gap-2 bg-success hover:bg-success/80 text-white rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50 shrink-0">
+            {actionLoading === 'deploy' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Rocket className="w-4 h-4" />} Deploy Now
+          </button>
+        </div>
+      )}
+
       {/* Stats Row */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
           { label: 'Total Messages', value: formatNum(agent.totalMessages), icon: MessageSquare, color: 'text-primary', bg: 'bg-primary/10' },
           { label: 'Tokens Used', value: formatTokens(agent.totalTokens), icon: Zap, color: 'text-accent', bg: 'bg-accent/10' },
@@ -220,19 +314,31 @@ export default function AgentDetailPage() {
 
       {/* Tabs */}
       <div className="bg-card border border-border rounded-xl">
-        <div className="flex border-b border-border">
-          {(['logs', 'config', 'health', 'memory'] as const).map(t => (
-            <button key={t} onClick={() => setTab(t)} className={`px-5 py-3 text-sm font-medium transition-colors border-b-2 -mb-px ${tab === t ? 'border-primary text-primary' : 'border-transparent text-text-muted hover:text-text'}`}>
+        <div className="flex border-b border-border overflow-x-auto">
+          {(['chat', 'logs', 'config', 'skills', 'connect', 'health', 'memory'] as const).map(t => (
+            <button key={t} onClick={() => setTab(t)} className={`px-5 py-3 text-sm font-medium transition-colors border-b-2 -mb-px whitespace-nowrap ${tab === t ? 'border-primary text-primary' : 'border-transparent text-text-muted hover:text-text'}`}>
+              {t === 'chat' && <MessageSquare className="w-4 h-4 inline mr-1.5 -mt-0.5" />}
               {t === 'logs' && <Terminal className="w-4 h-4 inline mr-1.5 -mt-0.5" />}
-              {t === 'health' && <Activity className="w-4 h-4 inline mr-1.5 -mt-0.5" />}
               {t === 'config' && <Settings className="w-4 h-4 inline mr-1.5 -mt-0.5" />}
+              {t === 'skills' && <Puzzle className="w-4 h-4 inline mr-1.5 -mt-0.5" />}
+              {t === 'connect' && <Zap className="w-4 h-4 inline mr-1.5 -mt-0.5" />}
+              {t === 'health' && <Activity className="w-4 h-4 inline mr-1.5 -mt-0.5" />}
               {t === 'memory' && <Brain className="w-4 h-4 inline mr-1.5 -mt-0.5" />}
               {t.charAt(0).toUpperCase() + t.slice(1)}
             </button>
           ))}
         </div>
 
-        <div className="p-4">
+        <div className={tab === 'chat' ? 'p-0 relative' : 'p-4'}>
+          {tab === 'chat' && (
+            <ChatPanel
+              agentId={agent.id}
+              agentName={agent.name}
+              agentStatus={agent.status}
+              agentModel={agent.model}
+            />
+          )}
+
           {tab === 'logs' && (
             <div className="bg-navy/50 rounded-lg p-4 font-mono text-xs space-y-1.5 max-h-96 overflow-y-auto">
               {logs.length === 0 ? (
@@ -255,7 +361,7 @@ export default function AgentDetailPage() {
 
           {tab === 'config' && (
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-text-secondary mb-1.5">Agent Name</label>
                   <input type="text" value={configForm.name} onChange={e => setConfigForm(p => ({ ...p, name: e.target.value }))} className="w-full bg-navy/50 border border-border rounded-lg px-4 py-2.5 text-sm text-text focus:outline-none focus:border-primary/50" />
@@ -275,7 +381,7 @@ export default function AgentDetailPage() {
                 <label className="block text-sm font-medium text-text-secondary mb-1.5">System Prompt</label>
                 <textarea rows={5} value={configForm.systemPrompt} onChange={e => setConfigForm(p => ({ ...p, systemPrompt: e.target.value }))} className="w-full bg-navy/50 border border-border rounded-lg px-4 py-3 text-sm text-text font-mono focus:outline-none focus:border-primary/50 resize-none" placeholder="You are a helpful assistant..." />
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-text-secondary mb-1.5">Temperature</label>
                   <input type="number" step="0.1" min="0" max="2" value={configForm.temperature} onChange={e => setConfigForm(p => ({ ...p, temperature: parseFloat(e.target.value) || 0 }))} className="w-full bg-navy/50 border border-border rounded-lg px-4 py-2.5 text-sm text-text focus:outline-none focus:border-primary/50" />
@@ -288,7 +394,7 @@ export default function AgentDetailPage() {
               <div className="flex items-center justify-between">
                 <button onClick={saveConfig} disabled={saveStatus === 'saving'} className="bg-primary hover:bg-primary-hover text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2">
                   {saveStatus === 'saving' && <Loader2 className="w-4 h-4 animate-spin" />}
-                  {saveStatus === 'saved' ? '✓ Saved!' : saveStatus === 'error' ? 'Error — Try Again' : 'Save Changes'}
+                  {saveStatus === 'saved' ? 'âœ“ Saved!' : saveStatus === 'error' ? 'Error â€” Try Again' : 'Save Changes'}
                 </button>
                 <div>
                   {!deleteConfirm ? (
@@ -304,7 +410,70 @@ export default function AgentDetailPage() {
                   )}
                 </div>
               </div>
+
+              {/* Generated Config Preview */}
+              <div className="mt-6 pt-6 border-t border-border">
+                <ConfigPreview agentId={agent.id} deployMode={agent.deployMode || 'CLOUD'} />
+              </div>
             </div>
+          )}
+
+          {tab === 'skills' && (() => {
+            const filtered = SKILL_CATALOG.filter(s =>
+              !skillsFilter || s.name.toLowerCase().includes(skillsFilter.toLowerCase()) || s.description.toLowerCase().includes(skillsFilter.toLowerCase())
+            )
+            const grouped = Object.entries(CATEGORY_LABELS).map(([key, label]) => ({
+              key, label, skills: filtered.filter(s => s.category === key),
+            })).filter(g => g.skills.length > 0)
+
+            return (
+              <div className="space-y-5">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-text-secondary">Enable skills to give your agent superpowers. {enabledSkills.length} of {SKILL_CATALOG.length} active.</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <input type="text" placeholder="Search skills..." value={skillsFilter} onChange={e => setSkillsFilter(e.target.value)} className="bg-navy/50 border border-border rounded-lg px-3 py-1.5 text-sm text-text placeholder:text-text-muted focus:outline-none focus:border-primary/50 w-48" />
+                    <button onClick={saveSkills} disabled={skillsSaving} className="bg-primary hover:bg-primary-hover text-white text-sm font-medium px-4 py-1.5 rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2">
+                      {skillsSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                      Save
+                    </button>
+                  </div>
+                </div>
+
+                {grouped.map(group => (
+                  <div key={group.key}>
+                    <h3 className="text-sm font-semibold text-text-secondary mb-2">{group.label}</h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {group.skills.map(skill => {
+                        const active = enabledSkills.includes(skill.id)
+                        return (
+                          <button key={skill.id} onClick={() => toggleSkill(skill.id)} className={`text-left p-3 rounded-xl border transition-all ${active ? 'border-primary/50 bg-primary/5' : 'border-border hover:border-border-light bg-navy/30'}`}>
+                            <div className="flex items-start gap-3">
+                              <span className="text-xl">{skill.icon}</span>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm font-medium text-text">{skill.name}</span>
+                                  {skill.popular && <span className="text-[9px] font-semibold bg-accent/10 text-accent px-1.5 py-0.5 rounded">POPULAR</span>}
+                                </div>
+                                <p className="text-xs text-text-muted mt-0.5 line-clamp-1">{skill.description}</p>
+                              </div>
+                              <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 mt-0.5 transition-colors ${active ? 'border-primary bg-primary' : 'border-border'}`}>
+                                {active && <Check className="w-3 h-3 text-white" />}
+                              </div>
+                            </div>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )
+          })()}
+
+          {tab === 'connect' && (
+            <RelaySetup agentId={agent.id} agentName={agent.name} />
           )}
 
           {tab === 'health' && (

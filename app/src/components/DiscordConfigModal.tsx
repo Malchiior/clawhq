@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, ExternalLink, CheckCircle, AlertCircle, Loader2, Copy } from 'lucide-react'
+import { X, ExternalLink, CheckCircle, AlertCircle, Loader2, Copy, Check } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { apiFetch } from '../lib/api'
 
@@ -10,123 +10,95 @@ interface DiscordConfigModalProps {
   channelId: string
 }
 
-interface DiscordConfig {
-  botToken?: string
-  applicationId?: string
-  guildId?: string
-  isConfigured?: boolean
-  botName?: string
-  status?: string
-}
-
 export default function DiscordConfigModal({ isOpen, onClose, onSuccess, channelId }: DiscordConfigModalProps) {
-  const [, setConfig] = useState<DiscordConfig>({})
+  const [step, setStep] = useState<'instructions' | 'configure' | 'invite' | 'success'>('instructions')
   const [botToken, setBotToken] = useState('')
   const [applicationId, setApplicationId] = useState('')
   const [guildId, setGuildId] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [step, setStep] = useState(1)
-  const [testResult, setTestResult] = useState<{ success: boolean; message: string; botInfo?: any; guildInfo?: any } | null>(null)
+  const [botInfo, setBotInfo] = useState<{ id: string; username: string; discriminator: string } | null>(null)
+  const [guildInfo, setGuildInfo] = useState<{ id: string; name: string } | null>(null)
+  const [inviteUrl, setInviteUrl] = useState('')
+  const [webhookUrl, setWebhookUrl] = useState('')
+  const [copied, setCopied] = useState<string | null>(null)
 
   useEffect(() => {
     if (isOpen && channelId) {
-      loadConfig()
+      loadExistingConfig()
     }
   }, [isOpen, channelId])
 
-  const loadConfig = async () => {
+  const loadExistingConfig = async () => {
     try {
       const response = await apiFetch(`/api/channels/${channelId}`)
-      const channelConfig = response.channel.config as DiscordConfig
-      setConfig(channelConfig)
-      setBotToken(channelConfig.botToken || '')
-      setApplicationId(channelConfig.applicationId || '')
-      setGuildId(channelConfig.guildId || '')
-    } catch (err) {
-      setError('Failed to load Discord configuration')
-    }
+      const cfg = response.channel.config as any
+      if (cfg?.botToken) setBotToken(cfg.botToken)
+      if (cfg?.applicationId) setApplicationId(cfg.applicationId)
+      if (cfg?.guildId) setGuildId(cfg.guildId)
+    } catch { /* ignore */ }
   }
 
-  const testConnection = async () => {
-    if (!botToken || !applicationId) {
-      setError('Please fill in all required fields')
-      return
-    }
+  const handleConfigure = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!botToken.trim() || !applicationId.trim()) return
 
     setLoading(true)
     setError('')
-    setTestResult(null)
 
     try {
-      const response = await apiFetch(`/api/discord/test`, {
+      const response = await apiFetch('/api/discord/configure', {
         method: 'POST',
         body: JSON.stringify({
-          botToken,
-          applicationId,
-          guildId: guildId || undefined
-        })
+          botToken: botToken.trim(),
+          applicationId: applicationId.trim(),
+          guildId: guildId.trim() || undefined,
+          channelId,
+        }),
       })
 
-      setTestResult(response)
-      setStep(2)
+      setBotInfo(response.bot)
+      setGuildInfo(response.guild || null)
+      setInviteUrl(response.inviteUrl)
+      setWebhookUrl(response.webhookUrl)
+      setStep('invite')
     } catch (err: any) {
-      const message = err.message || 'Connection failed'
-      setTestResult({ success: false, message })
-      setError(message)
+      setError(err.message || 'Failed to configure Discord bot')
     } finally {
       setLoading(false)
     }
   }
 
-  const saveConfiguration = async () => {
-    setLoading(true)
-    setError('')
-
+  const copyToClipboard = async (text: string, key: string) => {
     try {
-      await apiFetch(`/api/channels/${channelId}`, {
-        method: 'PUT',
-        body: JSON.stringify({
-          config: {
-            botToken,
-            applicationId,
-            guildId: guildId || undefined,
-            isConfigured: true,
-            botName: testResult?.botInfo?.username ? `${testResult.botInfo.username}#${testResult.botInfo.discriminator}` : 'Discord Bot'
-          }
-        })
-      })
-
-      onSuccess()
-      onClose()
-      reset()
-    } catch (err: any) {
-      setError(err.message || 'Failed to save configuration')
-    } finally {
-      setLoading(false)
-    }
+      await navigator.clipboard.writeText(text)
+      setCopied(key)
+      setTimeout(() => setCopied(null), 2000)
+    } catch { /* ignore */ }
   }
 
-  const reset = () => {
-    setBotToken('')
-    setApplicationId('')
-    setGuildId('')
-    setError('')
-    setStep(1)
-    setTestResult(null)
-    setConfig({})
-  }
-
-  const handleClose = () => {
+  const handleComplete = () => {
+    onSuccess()
     onClose()
     reset()
   }
 
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text)
+  const reset = () => {
+    setStep('instructions')
+    setBotToken('')
+    setApplicationId('')
+    setGuildId('')
+    setBotInfo(null)
+    setGuildInfo(null)
+    setInviteUrl('')
+    setWebhookUrl('')
+    setError('')
   }
 
-  const inviteUrl = applicationId ? `https://discord.com/api/oauth2/authorize?client_id=${applicationId}&permissions=8&scope=bot%20applications.commands` : ''
+  const handleClose = () => {
+    onClose()
+    setTimeout(reset, 300)
+  }
 
   return (
     <AnimatePresence>
@@ -135,196 +107,198 @@ export default function DiscordConfigModal({ isOpen, onClose, onSuccess, channel
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
           onClick={handleClose}
         >
           <motion.div
-            initial={{ scale: 0.9, opacity: 0 }}
+            initial={{ scale: 0.95, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            exit={{ scale: 0.9, opacity: 0 }}
-            className="bg-card border border-border rounded-xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto"
-            onClick={(e) => e.stopPropagation()}
+            exit={{ scale: 0.95, opacity: 0 }}
+            onClick={e => e.stopPropagation()}
+            className="bg-card border border-border rounded-xl shadow-2xl w-full max-w-lg overflow-hidden max-h-[90vh] overflow-y-auto"
           >
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h2 className="text-xl font-semibold text-text flex items-center gap-2">
-                  🎮 Discord Bot Configuration
-                </h2>
-                <p className="text-sm text-text-secondary mt-1">
-                  Connect your Discord bot to start receiving messages from your Discord server.
-                </p>
-              </div>
-              <button
-                onClick={handleClose}
-                className="p-2 hover:bg-background rounded-lg transition-colors"
-              >
-                <X className="w-5 h-5 text-text-muted" />
+            <div className="flex items-center justify-between p-6 border-b border-border">
+              <h3 className="text-lg font-semibold text-text">Setup Discord Bot</h3>
+              <button onClick={handleClose} className="p-1 text-text-muted hover:text-text transition-colors">
+                <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="space-y-6">
-              {step === 1 && (
-                <>
-                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                    <h3 className="font-medium text-blue-900 mb-2">Setup Instructions</h3>
-                    <ol className="text-sm text-blue-800 space-y-2 list-decimal list-inside">
-                      <li>Go to the <a href="https://discord.com/developers/applications" target="_blank" rel="noopener noreferrer" className="underline hover:no-underline">Discord Developer Portal</a></li>
-                      <li>Create a new application or select an existing one</li>
-                      <li>Go to the "Bot" section and create a bot (if not already created)</li>
-                      <li>Copy the bot token and application ID</li>
-                      <li>Optional: Copy your Discord server (guild) ID for server-specific setup</li>
+            <div className="p-6">
+              {/* Step 1: Instructions */}
+              {step === 'instructions' && (
+                <div className="space-y-4">
+                  <div className="text-sm text-text-secondary space-y-3">
+                    <p>To connect a Discord bot to ClawHQ, you'll need a bot from the Discord Developer Portal:</p>
+                    <ol className="list-decimal list-inside space-y-2 ml-2">
+                      <li>Go to the <a href="https://discord.com/developers/applications" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:text-indigo-300 underline">Discord Developer Portal</a></li>
+                      <li>Click <strong>"New Application"</strong> and name it</li>
+                      <li>Go to <strong>Bot</strong> → click <strong>"Add Bot"</strong></li>
+                      <li>Copy the <strong>Bot Token</strong> (click "Reset Token" if needed)</li>
+                      <li>Copy the <strong>Application ID</strong> from General Information</li>
+                      <li>Enable <strong>Message Content Intent</strong> under Bot → Privileged Gateway Intents</li>
                     </ol>
+                    <div className="flex items-center gap-2 mt-4">
+                      <ExternalLink className="w-4 h-4 text-indigo-400" />
+                      <a href="https://discord.com/developers/docs/getting-started" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:text-indigo-300 text-sm underline">
+                        Discord bot setup guide
+                      </a>
+                    </div>
+                  </div>
+                  <button onClick={() => setStep('configure')} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2.5 px-4 rounded-lg transition-colors">
+                    I have my bot credentials
+                  </button>
+                </div>
+              )}
+
+              {/* Step 2: Enter credentials */}
+              {step === 'configure' && (
+                <form onSubmit={handleConfigure} className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-text mb-2">Bot Token *</label>
+                    <input
+                      type="password"
+                      value={botToken}
+                      onChange={e => setBotToken(e.target.value)}
+                      placeholder="MTIzNDU2Nzg5MDEyMzQ1Njc4OQ..."
+                      className="w-full px-3 py-2.5 bg-background border border-border rounded-lg text-text placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500"
+                      disabled={loading}
+                      autoFocus
+                    />
+                    <p className="text-xs text-text-muted mt-1">From Developer Portal → Bot → Token</p>
                   </div>
 
-                  <div className="space-y-4">
-                    <div>
-                      <label htmlFor="botToken" className="block text-sm font-medium text-text mb-2">
-                        Bot Token *
-                      </label>
-                      <input
-                        id="botToken"
-                        type="password"
-                        placeholder="Your Discord bot token"
-                        value={botToken}
-                        onChange={(e) => setBotToken(e.target.value)}
-                        className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text"
-                      />
-                      <p className="text-xs text-text-muted mt-1">
-                        Found in Discord Developer Portal → Your App → Bot → Token
-                      </p>
-                    </div>
+                  <div>
+                    <label className="block text-sm font-medium text-text mb-2">Application ID *</label>
+                    <input
+                      type="text"
+                      value={applicationId}
+                      onChange={e => setApplicationId(e.target.value)}
+                      placeholder="123456789012345678"
+                      className="w-full px-3 py-2.5 bg-background border border-border rounded-lg text-text placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500"
+                      disabled={loading}
+                    />
+                    <p className="text-xs text-text-muted mt-1">From Developer Portal → General Information → Application ID</p>
+                  </div>
 
-                    <div>
-                      <label htmlFor="applicationId" className="block text-sm font-medium text-text mb-2">
-                        Application ID *
-                      </label>
-                      <input
-                        id="applicationId"
-                        placeholder="Your Discord application ID"
-                        value={applicationId}
-                        onChange={(e) => setApplicationId(e.target.value)}
-                        className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text"
-                      />
-                      <p className="text-xs text-text-muted mt-1">
-                        Found in Discord Developer Portal → Your App → General Information → Application ID
-                      </p>
-                    </div>
-
-                    <div>
-                      <label htmlFor="guildId" className="block text-sm font-medium text-text mb-2">
-                        Server (Guild) ID (Optional)
-                      </label>
-                      <input
-                        id="guildId"
-                        placeholder="Your Discord server ID"
-                        value={guildId}
-                        onChange={(e) => setGuildId(e.target.value)}
-                        className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text"
-                      />
-                      <p className="text-xs text-text-muted mt-1">
-                        Right-click your server icon → Copy Server ID (Developer Mode must be enabled)
-                      </p>
-                    </div>
+                  <div>
+                    <label className="block text-sm font-medium text-text mb-2">Server (Guild) ID <span className="text-text-muted font-normal">(optional)</span></label>
+                    <input
+                      type="text"
+                      value={guildId}
+                      onChange={e => setGuildId(e.target.value)}
+                      placeholder="Right-click server → Copy Server ID"
+                      className="w-full px-3 py-2.5 bg-background border border-border rounded-lg text-text placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500"
+                      disabled={loading}
+                    />
+                    <p className="text-xs text-text-muted mt-1">Enable Developer Mode in Discord settings to copy IDs</p>
                   </div>
 
                   {error && (
-                    <div className="bg-red-50 border border-red-200 text-red-800 p-3 rounded-lg flex items-center gap-2">
-                      <AlertCircle className="w-4 h-4" />
-                      <span className="text-sm">{error}</span>
+                    <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
+                      <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0" />
+                      <p className="text-sm text-red-400">{error}</p>
                     </div>
                   )}
 
-                  {testResult && !testResult.success && (
-                    <div className="bg-red-50 border border-red-200 text-red-800 p-3 rounded-lg flex items-center gap-2">
-                      <AlertCircle className="w-4 h-4" />
-                      <span className="text-sm">{testResult.message}</span>
-                    </div>
-                  )}
-
-                  <div className="flex justify-end gap-3">
-                    <button
-                      onClick={handleClose}
-                      disabled={loading}
-                      className="px-4 py-2 text-text-secondary hover:text-text transition-colors"
-                    >
-                      Cancel
+                  <div className="flex gap-3">
+                    <button type="button" onClick={() => setStep('instructions')} className="flex-1 px-4 py-2.5 border border-border text-text-secondary hover:text-text rounded-lg transition-colors" disabled={loading}>
+                      Back
                     </button>
-                    <button
-                      onClick={testConnection}
-                      disabled={loading || !botToken || !applicationId}
-                      className="px-4 py-2 bg-primary hover:bg-primary-hover text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                    >
-                      {loading && <Loader2 className="w-4 h-4 animate-spin" />}
-                      {loading ? 'Testing...' : 'Test Connection'}
+                    <button type="submit" disabled={!botToken.trim() || !applicationId.trim() || loading} className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2.5 px-4 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+                      {loading ? <><Loader2 className="w-4 h-4 animate-spin" /> Connecting...</> : 'Connect Bot'}
                     </button>
                   </div>
-                </>
+                </form>
               )}
 
-              {step === 2 && testResult?.success && (
-                <>
-                  <div className="bg-green-50 border border-green-200 text-green-800 p-3 rounded-lg flex items-center gap-2">
-                    <CheckCircle className="w-4 h-4" />
-                    <span className="text-sm">
-                      Connected successfully as {testResult.botInfo?.username}#{testResult.botInfo?.discriminator}
-                      {testResult.guildInfo && ` in ${testResult.guildInfo.name}`}
+              {/* Step 3: Invite bot + interactions URL */}
+              {step === 'invite' && botInfo && (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 p-3 bg-green-500/10 border border-green-500/20 rounded-lg">
+                    <CheckCircle className="w-4 h-4 text-green-400 flex-shrink-0" />
+                    <span className="text-sm text-green-400">
+                      Connected as <strong>{botInfo.username}#{botInfo.discriminator}</strong>
+                      {guildInfo && <> in <strong>{guildInfo.name}</strong></>}
                     </span>
                   </div>
 
-                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                    <h3 className="font-medium text-blue-900 mb-3">Add Bot to Your Server</h3>
-                    <p className="text-sm text-blue-800 mb-3">
-                      Use this invite link to add your bot to your Discord server:
-                    </p>
-                    {inviteUrl && (
-                      <div className="bg-white border border-blue-300 rounded p-2 flex items-center justify-between">
-                        <code className="text-xs text-blue-900 break-all mr-2">{inviteUrl}</code>
-                        <div className="flex gap-1">
-                          <button
-                            onClick={() => copyToClipboard(inviteUrl)}
-                            className="p-1 text-blue-600 hover:text-blue-800 transition-colors"
-                          >
-                            <Copy className="w-3 h-3" />
-                          </button>
-                          <a
-                            href={inviteUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="p-1 text-blue-600 hover:text-blue-800 transition-colors"
-                          >
-                            <ExternalLink className="w-3 h-3" />
-                          </a>
-                        </div>
+                  {/* Invite URL */}
+                  <div>
+                    <label className="block text-xs font-medium text-text-muted mb-1">Bot Invite Link</label>
+                    <div className="flex items-center gap-2 p-3 bg-background border border-border rounded-lg">
+                      <code className="flex-1 text-xs text-text font-mono break-all">{inviteUrl}</code>
+                      <div className="flex gap-1 flex-shrink-0">
+                        <button onClick={() => copyToClipboard(inviteUrl, 'invite')} className="p-1 text-text-muted hover:text-text transition-colors">
+                          {copied === 'invite' ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
+                        </button>
+                        <a href={inviteUrl} target="_blank" rel="noopener noreferrer" className="p-1 text-text-muted hover:text-text transition-colors">
+                          <ExternalLink className="w-4 h-4" />
+                        </a>
                       </div>
-                    )}
+                    </div>
+                    <p className="text-xs text-text-muted mt-1">Use this link to add the bot to your Discord server</p>
                   </div>
 
-                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                    <h3 className="font-medium text-yellow-900 mb-2">Important Notes</h3>
-                    <ul className="text-sm text-yellow-800 space-y-1 list-disc list-inside">
-                      <li>Make sure your bot has appropriate permissions in your Discord server</li>
-                      <li>The bot needs "Send Messages" and "Read Message History" permissions at minimum</li>
-                      <li>You can restrict the bot to specific channels using Discord's permission system</li>
-                    </ul>
+                  {/* Interactions URL */}
+                  <div>
+                    <label className="block text-xs font-medium text-text-muted mb-1">Interactions Endpoint URL</label>
+                    <div className="flex items-center gap-2 p-3 bg-background border border-border rounded-lg">
+                      <code className="flex-1 text-xs text-text font-mono break-all">{webhookUrl}</code>
+                      <button onClick={() => copyToClipboard(webhookUrl, 'webhook')} className="p-1 text-text-muted hover:text-text transition-colors flex-shrink-0">
+                        {copied === 'webhook' ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
+                      </button>
+                    </div>
+                    <p className="text-xs text-text-muted mt-1">
+                      Paste this in Developer Portal → General Information → Interactions Endpoint URL
+                    </p>
                   </div>
 
-                  <div className="flex justify-end gap-3">
-                    <button
-                      onClick={() => setStep(1)}
-                      className="px-4 py-2 text-text-secondary hover:text-text transition-colors"
-                    >
+                  <div className="bg-indigo-500/10 border border-indigo-500/20 rounded-lg p-3 text-sm text-indigo-200">
+                    <p className="font-medium mb-1">Final steps:</p>
+                    <ol className="list-decimal list-inside space-y-1 text-xs">
+                      <li>Click the invite link above to add the bot to your server</li>
+                      <li>In Developer Portal, paste the Interactions URL and save</li>
+                      <li>Under Bot → Privileged Gateway Intents, enable <strong>Message Content Intent</strong></li>
+                    </ol>
+                  </div>
+
+                  <div className="flex gap-3">
+                    <button onClick={() => setStep('configure')} className="flex-1 px-4 py-2.5 border border-border text-text-secondary hover:text-text rounded-lg transition-colors">
                       Back
                     </button>
-                    <button
-                      onClick={saveConfiguration}
-                      disabled={loading}
-                      className="px-4 py-2 bg-primary hover:bg-primary-hover text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                    >
-                      {loading && <Loader2 className="w-4 h-4 animate-spin" />}
-                      {loading ? 'Saving...' : 'Complete Setup'}
+                    <button onClick={() => setStep('success')} className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2.5 px-4 rounded-lg transition-colors">
+                      I've completed the steps
                     </button>
                   </div>
-                </>
+                </div>
+              )}
+
+              {/* Step 4: Success */}
+              {step === 'success' && botInfo && (
+                <div className="text-center space-y-4">
+                  <div className="flex items-center justify-center w-12 h-12 bg-green-500/10 border border-green-500/20 rounded-full mx-auto">
+                    <CheckCircle className="w-6 h-6 text-green-400" />
+                  </div>
+                  <div>
+                    <h4 className="font-semibold text-text mb-2">Discord Bot Connected!</h4>
+                    <div className="bg-background border border-border rounded-lg p-3">
+                      <div className="flex items-center gap-3">
+                        <span className="text-2xl">🎮</span>
+                        <div className="text-left">
+                          <p className="font-medium text-text">{botInfo.username}#{botInfo.discriminator}</p>
+                          {guildInfo && <p className="text-sm text-text-secondary">{guildInfo.name}</p>}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-sm text-text-secondary bg-indigo-500/10 border border-indigo-500/20 rounded-lg p-3">
+                    <p>Your Discord bot is live! Messages in your server will be routed to your paired agents.</p>
+                  </div>
+                  <button onClick={handleComplete} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2.5 px-4 rounded-lg transition-colors">
+                    Complete Setup
+                  </button>
+                </div>
               )}
             </div>
           </motion.div>

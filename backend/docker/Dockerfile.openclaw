@@ -1,0 +1,50 @@
+# ClawHQ OpenClaw Agent Container
+# Base image with Node.js 24 LTS
+FROM node:24-alpine
+
+# Install system dependencies
+RUN apk add --no-cache \
+    python3 \
+    make \
+    g++ \
+    git \
+    curl \
+    bash \
+    sqlite \
+    ca-certificates
+
+# Create non-root user for security
+RUN addgroup -g 1001 -S openclaw && \
+    adduser -S openclaw -u 1001 -g openclaw
+
+# Set working directory
+WORKDIR /app
+
+# Create directories with proper permissions
+RUN mkdir -p /app/workspace /app/config /app/logs && \
+    chown -R openclaw:openclaw /app
+
+# Install OpenClaw globally
+RUN npm install -g openclaw@latest
+
+# Copy entrypoint script
+COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh && \
+    chown openclaw:openclaw /usr/local/bin/entrypoint.sh
+
+# Switch to non-root user
+USER openclaw
+
+# Create OpenClaw workspace directory
+RUN mkdir -p /app/workspace/.openclaw
+
+# Expose OpenClaw default port
+EXPOSE 18789
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:18789/health || exit 1
+
+# Set entrypoint
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+CMD ["openclaw", "gateway", "start", "--port", "18789", "--workspace", "/app/workspace"]

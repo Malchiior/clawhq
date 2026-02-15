@@ -1,0 +1,127 @@
+# ClawHQ Production Docker Compose
+# Use with: docker compose -f docker-compose.prod.yml up -d
+# For Railway: backend deploys via railway.json; this file is for
+# self-hosted or VPS deployments (Fly.io, AWS ECS, DigitalOcean, etc.)
+
+version: '3.8'
+
+services:
+  # ── PostgreSQL ───────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-clawhq}
+      POSTGRES_USER: ${POSTGRES_USER:-clawhq}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-clawhq}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+
+  # ── Redis (session cache, rate limiting) ─────────────
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.25'
+
+  # ── ClawHQ API Backend ──────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "${API_PORT:-3001}:3001"
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-clawhq}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-clawhq}
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET}
+      FRONTEND_URL: ${FRONTEND_URL:-https://clawhq.dev}
+      APP_URL: ${APP_URL:-https://api.clawhq.dev}
+      API_BASE_URL: ${APP_URL:-https://api.clawhq.dev}
+
+      # Google OAuth
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+
+      # Stripe
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET}
+
+      # Bundled API Keys
+      CLAWHQ_ANTHROPIC_KEY: ${CLAWHQ_ANTHROPIC_KEY}
+      CLAWHQ_OPENAI_KEY: ${CLAWHQ_OPENAI_KEY}
+      CLAWHQ_GOOGLE_KEY: ${CLAWHQ_GOOGLE_KEY}
+      CLAWHQ_DEEPSEEK_KEY: ${CLAWHQ_DEEPSEEK_KEY}
+      CLAWHQ_GROK_KEY: ${CLAWHQ_GROK_KEY}
+      MASTER_API_ENCRYPTION_KEY: ${MASTER_API_ENCRYPTION_KEY:?Set MASTER_API_ENCRYPTION_KEY}
+
+      # Email
+      RESEND_API_KEY: ${RESEND_API_KEY}
+
+      # Docker socket for container orchestration
+      DOCKER_HOST: unix:///var/run/docker.sock
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+
+  # ── Caddy Reverse Proxy (auto-SSL) ─────────────────
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: '0.25'
+
+volumes:
+  postgres_data:
+  redis_data:
+  caddy_data:
+  caddy_config:

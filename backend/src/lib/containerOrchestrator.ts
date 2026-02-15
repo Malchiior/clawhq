@@ -1,0 +1,642 @@
+import { exec } from 'child_process';
+import { promisify } from 'util';
+import { EventEmitter } from 'events';
+import { writeFileSync, mkdirSync, existsSync } from 'fs';
+import { join } from 'path';
+import prisma from './prisma';
+import memoryService from './memory';
+
+const execAsync = promisify(exec);
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+export interface AgentConfig {
+  userId: string;
+  agentId: string;
+  agentName: string;
+  modelProvider: 'claude' | 'openai' | 'gemini' | 'deepseek' | 'grok';
+  model: string;
+  apiKey: string;
+  channels: string[];
+  systemPrompt?: string;
+  temperature?: number;
+  maxTokens?: number;
+  webhookToken?: string;
+}
+
+export interface ContainerInfo {
+  containerId: string | null;
+  userId: string;
+  agentId: string;
+  status: 'creating' | 'starting' | 'running' | 'stopping' | 'stopped' | 'error' | 'deploying';
+  port: number | null;
+  createdAt: Date;
+  lastHealthCheck?: Date | null;
+}
+
+// Map AgentStatus enum values to our internal status strings
+function agentStatusToInternal(status: string): ContainerInfo['status'] {
+  const map: Record<string, ContainerInfo['status']> = {
+    RUNNING: 'running',
+    STOPPED: 'stopped',
+    STARTING: 'starting',
+    ERROR: 'error',
+    DEPLOYING: 'deploying',
+  };
+  return map[status] || 'stopped';
+}
+
+function internalToAgentStatus(status: ContainerInfo['status']): string {
+  const map: Record<string, string> = {
+    running: 'RUNNING',
+    stopped: 'STOPPED',
+    starting: 'STARTING',
+    error: 'ERROR',
+    deploying: 'DEPLOYING',
+    creating: 'DEPLOYING',
+    stopping: 'STOPPED',
+  };
+  return map[status] || 'STOPPED';
+}
+
+// ---------------------------------------------------------------------------
+// Port Allocator — reserves ports 19000-19999 for user containers
+// ---------------------------------------------------------------------------
+
+class PortAllocator {
+  private readonly basePort = 19000;
+  private readonly maxPort = 19999;
+  private usedPorts: Set<number> = new Set();
+
+  async initialize(): Promise<void> {
+    // Load already-allocated ports from the database
+    const agents = await prisma.agent.findMany({
+      where: { containerPort: { not: null } },
+      select: { containerPort: true },
+    });
+    for (const a of agents) {
+      if (a.containerPort) this.usedPorts.add(a.containerPort);
+    }
+  }
+
+  allocate(): number {
+    for (let port = this.basePort; port <= this.maxPort; port++) {
+      if (!this.usedPorts.has(port)) {
+        this.usedPorts.add(port);
+        return port;
+      }
+    }
+    throw new Error('No available ports for new containers');
+  }
+
+  release(port: number): void {
+    this.usedPorts.delete(port);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Container Orchestrator
+// ---------------------------------------------------------------------------
+
+// Shell-escape a string to prevent command injection
+function shellEscape(s: string): string {
+  // Remove any characters that could break out of double quotes
+  return s.replace(/[`$\\!"]/g, '').replace(/[^\x20-\x7E]/g, '');
+}
+
+// Validate agent name to prevent injection
+function validateAgentName(name: string): boolean {
+  return /^[a-zA-Z0-9][a-zA-Z0-9 _-]{0,49}$/.test(name);
+}
+
+const OPENCLAW_IMAGE = 'openclaw/openclaw:latest';
+const CONTAINER_RAM_LIMIT = 512 * 1024 * 1024; // 512 MB
+const CONTAINER_CPU_QUOTA = 50000;              // 50% of one core
+const HEALTH_INTERVAL_MS = 30_000;
+const STARTUP_GRACE_MS = 15_000;
+
+class ContainerOrchestrator extends EventEmitter {
+  private ports = new PortAllocator();
+  private healthTimers: Map<string, NodeJS.Timeout> = new Map();
+  private initialized = false;
+
+  // ------- helpers -------
+
+  private containerName(userId: string, agentId: string): string {
+    return `clawhq-${userId.slice(0, 8)}-${agentId.slice(0, 8)}`;
+  }
+
+  private key(userId: string, agentId: string): string {
+    return `${userId}:${agentId}`;
+  }
+
+  private async updateAgentStatus(
+    agentId: string,
+    status: ContainerInfo['status'],
+    extra: Record<string, any> = {},
+  ): Promise<void> {
+    await prisma.agent.update({
+      where: { id: agentId },
+      data: { status: internalToAgentStatus(status) as any, ...extra },
+    });
+  }
+
+  private async log(agentId: string, level: string, message: string, metadata?: any): Promise<void> {
+    try {
+      await prisma.agentLog.create({ data: { agentId, level, message, metadata } });
+    } catch {
+      // Logging should never crash the orchestrator
+    }
+  }
+
+  // ------- Config generation -------
+
+  private generateOpenClawConfig(config: AgentConfig, port: number): string {
+    const providerMap: Record<string, string> = {
+      claude: 'anthropic',
+      openai: 'openai',
+      gemini: 'google',
+      deepseek: 'deepseek',
+      grok: 'xai',
+    };
+
+    const yaml = [
+      `# Auto-generated by ClawHQ for agent ${config.agentId}`,
+      `model: "${providerMap[config.modelProvider] || config.modelProvider}/${config.model}"`,
+      `port: 18789`,
+      ``,
+      `# Agent identity`,
+      `soul: |`,
+      `  ${(config.systemPrompt || 'You are a helpful AI assistant.').replace(/\n/g, '\n  ')}`,
+      ``,
+      `# Safety defaults`,
+      `safety:`,
+      `  tool_policy: "allowlist"`,
+      `  elevated: false`,
+      ``,
+      `# Heartbeat`,
+      `heartbeat:`,
+      `  intervalMs: 300000`,
+      ``,
+      `# Webhook for ClawHQ health reporting`,
+      `hooks:`,
+      `  agent:`,
+      `    token: "${config.webhookToken}"`,
+    ];
+
+    // Add channel configs if present
+    if (config.channels && config.channels.length > 0) {
+      yaml.push('', '# Channels');
+      for (const ch of config.channels) {
+        yaml.push(`# ${ch} channel — configure via ClawHQ dashboard`);
+      }
+    }
+
+    return yaml.join('\n');
+  }
+
+  private writeConfigToDisk(config: AgentConfig, port: number): string {
+    const configDir = join(process.env.CLAWHQ_DATA_DIR || '/var/lib/clawhq', 'agents', config.agentId);
+    if (!existsSync(configDir)) {
+      mkdirSync(configDir, { recursive: true });
+    }
+
+    const configPath = join(configDir, 'config.yaml');
+    const configContent = this.generateOpenClawConfig(config, port);
+    writeFileSync(configPath, configContent, 'utf-8');
+
+    // Also write workspace files (SOUL.md, AGENTS.md)
+    const workspaceDir = join(configDir, 'workspace');
+    if (!existsSync(workspaceDir)) {
+      mkdirSync(workspaceDir, { recursive: true });
+    }
+
+    if (config.systemPrompt) {
+      writeFileSync(join(workspaceDir, 'SOUL.md'), `# Soul\n\n${config.systemPrompt}`, 'utf-8');
+    }
+
+    writeFileSync(join(workspaceDir, 'AGENTS.md'), [
+      '# AGENTS.md',
+      '',
+      `Agent: ${config.agentName}`,
+      `Deployed by: ClawHQ`,
+      `Agent ID: ${config.agentId}`,
+      '',
+      '## Instructions',
+      '',
+      'Read SOUL.md for your personality and behavior guidelines.',
+    ].join('\n'), 'utf-8');
+
+    return configDir;
+  }
+
+  /**
+   * Public wrapper to write config for an agent (used by config/apply endpoint).
+   */
+  writeConfigForAgent(config: AgentConfig, port: number): string {
+    return this.writeConfigToDisk(config, port);
+  }
+
+  // ------- Docker command wrappers -------
+
+  private async dockerRun(name: string, env: string[], port: number, configDir?: string): Promise<string> {
+    // Sanitize all env values to prevent shell injection
+    const envFlags = env.map(e => `-e "${shellEscape(e)}"`).join(' ');
+    const safeName = shellEscape(name);
+    const safePort = parseInt(String(port), 10);
+    if (isNaN(safePort) || safePort < 1024 || safePort > 65535) {
+      throw new Error(`Invalid port: ${port}`);
+    }
+    const volumeFlag = configDir ? `-v "${shellEscape(configDir)}:/home/openclaw/.openclaw"` : '';
+    const cmd = [
+      'docker run -d',
+      `--name ${safeName}`,
+      '--restart unless-stopped',
+      `--memory ${CONTAINER_RAM_LIMIT}`,
+      `--cpu-quota ${CONTAINER_CPU_QUOTA}`,
+      `-p ${safePort}:18789`,
+      `--label clawhq.service=openclaw-agent`,
+      `--label clawhq.agent-id=${safeName}`,
+      volumeFlag,
+      envFlags,
+      OPENCLAW_IMAGE,
+    ].filter(Boolean).join(' ');
+
+    const { stdout } = await execAsync(cmd);
+    return stdout.trim(); // container ID
+  }
+
+  private async dockerStop(containerId: string): Promise<void> {
+    await execAsync(`docker stop -t 10 ${containerId}`).catch(() => {});
+  }
+
+  private async dockerRm(containerId: string): Promise<void> {
+    await execAsync(`docker rm -f ${containerId}`).catch(() => {});
+  }
+
+  private async dockerInspectStatus(containerId: string): Promise<string> {
+    try {
+      const { stdout } = await execAsync(
+        `docker inspect --format="{{.State.Status}}" ${containerId}`,
+      );
+      return stdout.trim();
+    } catch {
+      return 'not-found';
+    }
+  }
+
+  // ------- Public API -------
+
+  /**
+   * Initialize — load existing state from database, verify Docker daemon.
+   */
+  async initialize(): Promise<void> {
+    if (this.initialized) return;
+
+    // Verify Docker is reachable
+    try {
+      await execAsync('docker info');
+      console.log('✅ Docker connection established');
+    } catch (error) {
+      console.warn('⚠️  Docker not available — orchestrator running in dry-run mode');
+    }
+
+    await this.ports.initialize();
+
+    // Reconcile running agents — update status from Docker
+    const activeAgents = await prisma.agent.findMany({
+      where: { containerId: { not: null } },
+    });
+
+    for (const agent of activeAgents) {
+      if (!agent.containerId) continue;
+      const dockerStatus = await this.dockerInspectStatus(agent.containerId);
+
+      if (dockerStatus === 'running') {
+        // Resume health monitoring
+        this.scheduleHealthCheck(agent.userId, agent.id, agent.containerId, agent.containerPort!);
+      } else if (dockerStatus === 'not-found' || dockerStatus === 'exited') {
+        // Container disappeared — mark as stopped
+        await this.updateAgentStatus(agent.id, 'stopped', { containerId: null, containerPort: null });
+        if (agent.containerPort) this.ports.release(agent.containerPort);
+      }
+    }
+
+    this.initialized = true;
+    console.log('✅ Container Orchestrator initialized');
+  }
+
+  /**
+   * Create + start a container for an agent.
+   */
+  async createContainer(config: AgentConfig): Promise<ContainerInfo> {
+    const { userId, agentId, agentName, modelProvider, model, apiKey, channels } = config;
+    const webhookToken = config.webhookToken || `clawhq-${userId}-${agentId}-${Date.now().toString(36)}`;
+
+    // Allocate a host port
+    const port = this.ports.allocate();
+    const name = this.containerName(userId, agentId);
+
+    await this.updateAgentStatus(agentId, 'deploying', { containerPort: port, webhookToken });
+    await this.log(agentId, 'info', `Creating container ${name} on port ${port}`);
+    this.emit('containerStatusChanged', { userId, agentId, status: 'deploying', port });
+
+    try {
+      // Env vars passed into the OpenClaw container
+      const env = [
+        `CLAWHQ_USER_ID=${userId}`,
+        `CLAWHQ_AGENT_ID=${agentId}`,
+        `CLAWHQ_AGENT_NAME=${agentName}`,
+        `CLAWHQ_MODEL_PROVIDER=${modelProvider}`,
+        `CLAWHQ_MODEL=${model}`,
+        `CLAWHQ_API_KEY=${apiKey}`,
+        `CLAWHQ_CHANNELS=${channels.join(',')}`,
+        `CLAWHQ_WEBHOOK_TOKEN=${webhookToken}`,
+      ];
+
+      if (config.systemPrompt) env.push(`CLAWHQ_SYSTEM_PROMPT=${config.systemPrompt}`);
+      if (config.temperature != null) env.push(`CLAWHQ_TEMPERATURE=${config.temperature}`);
+      if (config.maxTokens != null) env.push(`CLAWHQ_MAX_TOKENS=${config.maxTokens}`);
+
+      // Generate OpenClaw config.yaml and workspace files
+      const configDir = this.writeConfigToDisk(config, port);
+
+      // Remove leftover container with the same name (idempotent)
+      await this.dockerRm(name).catch(() => {});
+
+      const containerId = await this.dockerRun(name, env, port, configDir);
+
+      await this.updateAgentStatus(agentId, 'running', {
+        containerId,
+        containerPort: port,
+        deployedAt: new Date(),
+        lastActiveAt: new Date(),
+      });
+
+      await this.log(agentId, 'info', `Container deployed: ${containerId.slice(0, 12)} on port ${port}`);
+      this.emit('containerStatusChanged', { userId, agentId, status: 'running', port });
+
+      // Start health checks after startup grace period
+      this.scheduleHealthCheck(userId, agentId, containerId, port);
+
+      return {
+        containerId,
+        userId,
+        agentId,
+        status: 'running',
+        port,
+        createdAt: new Date(),
+      };
+    } catch (error: any) {
+      this.ports.release(port);
+      await this.updateAgentStatus(agentId, 'error', { containerPort: null });
+      await this.log(agentId, 'error', `Failed to create container: ${error.message}`);
+      this.emit('containerStatusChanged', { userId, agentId, status: 'error' });
+      throw error;
+    }
+  }
+
+  /**
+   * Start a previously-stopped container.
+   */
+  async startContainer(userId: string, agentId: string): Promise<void> {
+    const agent = await prisma.agent.findFirst({ where: { id: agentId, userId } });
+    if (!agent) throw new Error(`Agent not found: ${agentId}`);
+
+    if (!agent.containerId) {
+      throw new Error('No container to start — deploy the agent first');
+    }
+
+    await this.updateAgentStatus(agentId, 'starting');
+    this.emit('containerStatusChanged', { userId, agentId, status: 'starting' });
+
+    try {
+      await execAsync(`docker start ${agent.containerId}`);
+      await this.updateAgentStatus(agentId, 'running', { lastActiveAt: new Date() });
+      this.emit('containerStatusChanged', { userId, agentId, status: 'running' });
+      this.scheduleHealthCheck(userId, agentId, agent.containerId, agent.containerPort!);
+      await this.log(agentId, 'info', 'Container started');
+    } catch (error: any) {
+      await this.updateAgentStatus(agentId, 'error');
+      await this.log(agentId, 'error', `Failed to start: ${error.message}`);
+      throw error;
+    }
+  }
+
+  /**
+   * Gracefully stop a running container.
+   */
+  async stopContainer(userId: string, agentId: string): Promise<void> {
+    const agent = await prisma.agent.findFirst({ where: { id: agentId, userId } });
+    if (!agent?.containerId) throw new Error('No running container found');
+
+    this.cancelHealthCheck(userId, agentId);
+    await this.updateAgentStatus(agentId, 'stopping');
+    this.emit('containerStatusChanged', { userId, agentId, status: 'stopping' });
+
+    // Snapshot memory before stopping
+    try { await this.snapshotMemory(agentId, 'shutdown'); } catch {}
+
+    try {
+      await this.dockerStop(agent.containerId);
+      await this.updateAgentStatus(agentId, 'stopped');
+      this.emit('containerStatusChanged', { userId, agentId, status: 'stopped' });
+      await this.log(agentId, 'info', 'Container stopped');
+    } catch (error: any) {
+      await this.updateAgentStatus(agentId, 'error');
+      await this.log(agentId, 'error', `Failed to stop: ${error.message}`);
+      throw error;
+    }
+  }
+
+  /**
+   * Destroy a container and release all resources.
+   */
+  async destroyContainer(userId: string, agentId: string): Promise<void> {
+    const agent = await prisma.agent.findFirst({ where: { id: agentId, userId } });
+    if (!agent) throw new Error(`Agent not found: ${agentId}`);
+
+    this.cancelHealthCheck(userId, agentId);
+
+    // Snapshot memory one last time
+    try { await this.snapshotMemory(agentId, 'destroy'); } catch {}
+
+    if (agent.containerId) {
+      await this.dockerRm(agent.containerId);
+    }
+
+    if (agent.containerPort) {
+      this.ports.release(agent.containerPort);
+    }
+
+    await this.updateAgentStatus(agentId, 'stopped', {
+      containerId: null,
+      containerPort: null,
+    });
+
+    this.emit('containerDestroyed', { userId, agentId });
+    await this.log(agentId, 'info', 'Container destroyed');
+  }
+
+  /**
+   * Get container info for a specific agent.
+   */
+  async getContainerInfo(userId: string, agentId: string): Promise<ContainerInfo | null> {
+    const agent = await prisma.agent.findFirst({
+      where: { id: agentId, userId },
+      select: {
+        id: true,
+        userId: true,
+        containerId: true,
+        containerPort: true,
+        status: true,
+        lastHeartbeat: true,
+        createdAt: true,
+      },
+    });
+
+    if (!agent) return null;
+
+    return {
+      containerId: agent.containerId,
+      userId: agent.userId,
+      agentId: agent.id,
+      status: agentStatusToInternal(agent.status),
+      port: agent.containerPort,
+      createdAt: agent.createdAt,
+      lastHealthCheck: agent.lastHeartbeat,
+    };
+  }
+
+  /**
+   * List all containers for a user.
+   */
+  async listUserContainers(userId: string): Promise<ContainerInfo[]> {
+    const agents = await prisma.agent.findMany({
+      where: { userId },
+      select: {
+        id: true, userId: true, containerId: true, containerPort: true,
+        status: true, lastHeartbeat: true, createdAt: true,
+      },
+    });
+
+    return agents.map(a => ({
+      containerId: a.containerId,
+      userId: a.userId,
+      agentId: a.id,
+      status: agentStatusToInternal(a.status),
+      port: a.containerPort,
+      createdAt: a.createdAt,
+      lastHealthCheck: a.lastHeartbeat,
+    }));
+  }
+
+  /**
+   * Get live container stats (CPU, memory, uptime).
+   */
+  async getContainerStats(containerId: string): Promise<{
+    cpu_percent: number;
+    memory_usage_mb: number;
+    uptime_seconds: number;
+  }> {
+    try {
+      const { stdout: statsOut } = await execAsync(
+        `docker stats --no-stream --format "{{.CPUPerc}},{{.MemUsage}}" ${containerId}`,
+      );
+      const [cpuStr, memStr] = statsOut.trim().split(',');
+      const cpu_percent = parseFloat(cpuStr.replace('%', '')) || 0;
+
+      const memPart = (memStr || '').split(' / ')[0];
+      let memory_usage_mb = 0;
+      if (memPart.includes('GiB')) memory_usage_mb = parseFloat(memPart) * 1024;
+      else if (memPart.includes('MiB')) memory_usage_mb = parseFloat(memPart);
+      else memory_usage_mb = parseFloat(memPart) || 0;
+
+      const { stdout: startedStr } = await execAsync(
+        `docker inspect --format="{{.State.StartedAt}}" ${containerId}`,
+      );
+      const uptime_seconds = Math.max(0, Math.floor((Date.now() - new Date(startedStr.trim()).getTime()) / 1000));
+
+      return { cpu_percent, memory_usage_mb, uptime_seconds };
+    } catch {
+      return { cpu_percent: 0, memory_usage_mb: 0, uptime_seconds: 0 };
+    }
+  }
+
+  /**
+   * Get recent container logs.
+   */
+  async getContainerLogs(containerId: string, lines = 100): Promise<string> {
+    try {
+      const { stdout } = await execAsync(`docker logs --tail ${lines} ${containerId} 2>&1`);
+      return stdout;
+    } catch (error: any) {
+      return `Failed to get logs: ${error.message}`;
+    }
+  }
+
+  // ------- Health monitoring -------
+
+  private scheduleHealthCheck(userId: string, agentId: string, containerId: string, port: number): void {
+    const k = this.key(userId, agentId);
+    this.cancelHealthCheck(userId, agentId);
+
+    const check = async () => {
+      try {
+        const status = await this.dockerInspectStatus(containerId);
+        if (status === 'running') {
+          await prisma.agent.update({
+            where: { id: agentId },
+            data: { lastHeartbeat: new Date() },
+          });
+          // Schedule next check
+          this.healthTimers.set(k, setTimeout(check, HEALTH_INTERVAL_MS));
+        } else {
+          console.log(`⚠️  Container ${containerId.slice(0, 12)} not running (${status}) — attempting restart`);
+          await this.updateAgentStatus(agentId, 'error');
+          await this.log(agentId, 'warn', `Container exited unexpectedly (${status}), restarting`);
+          try {
+            await execAsync(`docker start ${containerId}`);
+            await this.updateAgentStatus(agentId, 'running', { lastActiveAt: new Date() });
+            this.healthTimers.set(k, setTimeout(check, HEALTH_INTERVAL_MS));
+          } catch {
+            await this.log(agentId, 'error', 'Auto-restart failed');
+          }
+        }
+      } catch (err: any) {
+        console.error(`Health check error for ${agentId}:`, err.message);
+        this.healthTimers.set(k, setTimeout(check, HEALTH_INTERVAL_MS));
+      }
+    };
+
+    // First check after startup grace period
+    this.healthTimers.set(k, setTimeout(check, STARTUP_GRACE_MS));
+  }
+
+  private cancelHealthCheck(userId: string, agentId: string): void {
+    const k = this.key(userId, agentId);
+    const timer = this.healthTimers.get(k);
+    if (timer) {
+      clearTimeout(timer);
+      this.healthTimers.delete(k);
+    }
+  }
+
+  // ------- Memory snapshots -------
+
+  private async snapshotMemory(agentId: string, snapshotType: string): Promise<void> {
+    try {
+      await memoryService.syncFromFileSystem(agentId);
+      await memoryService.createSnapshot(agentId, snapshotType, `Automatic ${snapshotType} backup`);
+      await memoryService.cleanupOldSnapshots(agentId, 10);
+    } catch (error: any) {
+      console.error(`Memory snapshot (${snapshotType}) failed for ${agentId}:`, error.message);
+    }
+  }
+}
+
+// Singleton
+export const containerOrchestrator = new ContainerOrchestrator();
+export default containerOrchestrator;

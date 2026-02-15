@@ -135,7 +135,7 @@ export default function SettingsPage() {
                   <p className="text-xs text-text-muted capitalize">{profile?.plan || 'free'} plan</p>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-text-secondary mb-1.5">Full Name</label>
                   <input type="text" value={profileForm.name} onChange={e => setProfileForm(p => ({ ...p, name: e.target.value }))} className="w-full bg-navy/50 border border-border rounded-lg px-4 py-2.5 text-sm text-text focus:outline-none focus:border-primary/50" />
@@ -162,7 +162,7 @@ export default function SettingsPage() {
               </div>
               <button onClick={saveProfile} disabled={profileStatus === 'saving'} className="bg-primary hover:bg-primary-hover text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2">
                 {profileStatus === 'saving' && <Loader2 className="w-4 h-4 animate-spin" />}
-                {profileStatus === 'saved' ? <><Check className="w-4 h-4" /> Saved!</> : profileStatus === 'error' ? 'Error — Try Again' : 'Save Changes'}
+                {profileStatus === 'saved' ? <><Check className="w-4 h-4" /> Saved!</> : profileStatus === 'error' ? 'Error â€” Try Again' : 'Save Changes'}
               </button>
             </motion.div>
           )}
@@ -184,10 +184,10 @@ export default function SettingsPage() {
                 </div>
                 {newKeyResult && (
                   <div className="mt-3 p-3 bg-success/5 border border-success/20 rounded-lg">
-                    <p className="text-xs text-success mb-2">Key created! Copy it now — you won't see it again.</p>
+                    <p className="text-xs text-success mb-2">Key created! Copy it now â€” you won't see it again.</p>
                     <div className="flex items-center gap-2">
                       <code className="flex-1 text-xs font-mono text-text bg-navy/50 px-2 py-1 rounded overflow-x-auto">
-                        {showNewKey ? newKeyResult : newKeyResult.slice(0, 12) + '•'.repeat(40)}
+                        {showNewKey ? newKeyResult : newKeyResult.slice(0, 12) + 'â€¢'.repeat(40)}
                       </code>
                       <button onClick={() => setShowNewKey(!showNewKey)} className="p-1 text-text-muted hover:text-text transition-colors">
                         {showNewKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
@@ -260,11 +260,11 @@ export default function SettingsPage() {
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-text-secondary mb-1.5">Current Password</label>
-                  <input type="password" className="w-full bg-navy/50 border border-border rounded-lg px-4 py-2.5 text-sm text-text focus:outline-none focus:border-primary/50" placeholder="••••••••" />
+                  <input type="password" className="w-full bg-navy/50 border border-border rounded-lg px-4 py-2.5 text-sm text-text focus:outline-none focus:border-primary/50" placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-text-secondary mb-1.5">New Password</label>
-                  <input type="password" className="w-full bg-navy/50 border border-border rounded-lg px-4 py-2.5 text-sm text-text focus:outline-none focus:border-primary/50" placeholder="••••••••" />
+                  <input type="password" className="w-full bg-navy/50 border border-border rounded-lg px-4 py-2.5 text-sm text-text focus:outline-none focus:border-primary/50" placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢" />
                 </div>
                 <button className="bg-primary hover:bg-primary-hover text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">Update Password</button>
               </div>

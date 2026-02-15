@@ -1,15 +1,42 @@
 import { Router, Request, Response } from 'express'
+import crypto from 'crypto'
 import prisma from '../lib/prisma'
 
 const router = Router()
+
+// Validate webhook token from container
+async function validateWebhookToken(agentId: string, userId: string, token: string | undefined): Promise<boolean> {
+  if (!token) return false
+  const agent = await prisma.agent.findFirst({
+    where: { id: agentId, userId },
+    select: { webhookToken: true }
+  })
+  if (!agent?.webhookToken) return false
+  try {
+    return crypto.timingSafeEqual(
+      Buffer.from(agent.webhookToken),
+      Buffer.from(token)
+    )
+  } catch {
+    return false
+  }
+}
 
 // Webhook endpoint for agent containers to report status and events
 router.post('/agent', async (req: Request, res: Response) => {
   try {
     const { agentId, userId, event, status, message, metadata } = req.body
+    const webhookToken = req.headers['x-webhook-token'] as string | undefined
 
     if (!agentId || !userId || !event) {
       res.status(400).json({ error: 'Missing required fields: agentId, userId, event' })
+      return
+    }
+
+    // Verify webhook token to prevent spoofing
+    const valid = await validateWebhookToken(agentId, userId, webhookToken)
+    if (!valid) {
+      res.status(401).json({ error: 'Invalid webhook token' })
       return
     }
 

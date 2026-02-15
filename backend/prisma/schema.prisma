@@ -1,5 +1,6 @@
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x", "linux-musl-openssl-3.0.x"]
 }
 
 datasource db {
@@ -21,6 +22,8 @@ model User {
   businessName  String?
   brandColor    String    @default("#3b82f6")
   customDomain  String?
+  customDomainVerified Boolean @default(false)
+  customDomainToken    String?
   logoUrl       String?
   
   apiMode       String    @default("bundled") // "bundled" or "byok"
@@ -29,9 +32,20 @@ model User {
   maxChannels   Int       @default(1)
   dailyMsgLimit Int       @default(100)
   
+  // Credit system — monthly allocation of free API credits (in USD cents)
+  monthlyCredits   Int       @default(50)    // 50 = $0.50 free credits per month
+  usedCredits      Int       @default(0)     // cents used this billing period
+  creditResetDate  DateTime  @default(now()) // when credits reset next
+  
+  setupComplete Boolean   @default(false)
+  setupStep     String?   // tracks current setup step
+  
   emailVerified Boolean   @default(false)
   emailVerificationToken String?
   emailVerificationExpires DateTime?
+  
+  passwordResetToken   String?
+  passwordResetExpires DateTime?
   
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -41,6 +55,7 @@ model User {
   apiKeys       ApiKey[]
   usageRecords  UsageRecord[]
   sessions      Session[]
+  tickets       SupportTicket[]
 }
 
 model Session {
@@ -62,27 +77,39 @@ model Session {
 model Agent {
   id            String      @id @default(cuid())
   name          String
+  modelProvider String      @default("claude") // claude, openai, gemini, deepseek, grok
   model         String      @default("claude-sonnet-4-20250514")
   status        AgentStatus @default(STOPPED)
   containerId   String?
+  containerPort Int?
+  
+  deployMode    DeployMode  @default(CLOUD)
+  apiKey        String?     // Encrypted, null for bundled API mode
+  usesBundledApi Boolean    @default(false)
+  channels      String[]    @default([]) // Array of channel types
+  webhookToken  String?     // Token for agent webhook callbacks
   
   systemPrompt  String?
   temperature   Float       @default(0.7)
   maxTokens     Int         @default(4096)
+  skills        Json        @default("[]") // Array of enabled skill IDs
   
   totalMessages Int         @default(0)
   totalTokens   Int         @default(0)
   lastActiveAt  DateTime?
+  lastHeartbeat DateTime?
+  deployedAt    DateTime?
   
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
   
   userId        String
   user          User        @relation(fields: [userId], references: [id])
-  channels      ChannelAgent[]
+  agentChannels ChannelAgent[]
   logs          AgentLog[]
   memories      AgentMemory[]
   snapshots     AgentSnapshot[]
+  chatMessages  ChatMessage[]
 }
 
 model Channel {
@@ -96,7 +123,7 @@ model Channel {
   
   userId        String
   user          User          @relation(fields: [userId], references: [id])
-  agents        ChannelAgent[]
+  channelAgents ChannelAgent[]
 }
 
 model ChannelAgent {
@@ -202,6 +229,39 @@ model AgentSnapshot {
   @@index([agentId, createdAt])
 }
 
+model InviteCode {
+  id          String    @id @default(cuid())
+  code        String    @unique
+  maxUses     Int       @default(1)
+  usedCount   Int       @default(0)
+  note        String?   // Admin note (e.g., "ProductHunt launch batch")
+  createdBy   String?   // Admin user ID who created it
+  expiresAt   DateTime?
+  isActive    Boolean   @default(true)
+  
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  redemptions InviteRedemption[]
+}
+
+model InviteRedemption {
+  id           String   @id @default(cuid())
+  inviteCodeId String
+  userId       String
+  redeemedAt   DateTime @default(now())
+  
+  inviteCode   InviteCode @relation(fields: [inviteCodeId], references: [id])
+  
+  @@unique([inviteCodeId, userId])
+}
+
+enum DeployMode {
+  CLOUD       // Docker container hosted by ClawHQ
+  LOCAL       // Local Connector via WebSocket relay
+  DASHBOARD   // Dashboard-only with bundled API (no external deploy)
+}
+
 enum AgentStatus {
   RUNNING
   STOPPED
@@ -217,6 +277,70 @@ enum ChannelType {
   SLACK
   IMESSAGE
   TEAMS
+}
+
+model SupportTicket {
+  id          String       @id @default(cuid())
+  subject     String
+  category    String       @default("general") // general, billing, technical, feature, bug
+  priority    TicketPriority @default(NORMAL)
+  status      TicketStatus @default(OPEN)
+  
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  closedAt    DateTime?
+  
+  userId      String
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages    TicketMessage[]
+  
+  @@index([userId, status])
+  @@index([status, createdAt])
+}
+
+model TicketMessage {
+  id          String   @id @default(cuid())
+  content     String
+  isStaff     Boolean  @default(false)
+  senderName  String?  // Staff name when isStaff=true
+  
+  createdAt   DateTime @default(now())
+  
+  ticketId    String
+  ticket      SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  
+  @@index([ticketId, createdAt])
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  WAITING_ON_USER
+  RESOLVED
+  CLOSED
+}
+
+enum TicketPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+model ChatMessage {
+  id        String   @id @default(cuid())
+  role      String   // "user" or "assistant"
+  content   String
+  metadata  Json?    // Optional metadata (tokens used, model, etc.)
+  
+  createdAt DateTime @default(now())
+  
+  agentId   String
+  agent     Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  userId    String
+  
+  @@index([agentId, createdAt])
+  @@index([userId, agentId])
 }
 
 enum ApiProvider {

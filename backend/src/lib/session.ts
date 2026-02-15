@@ -6,6 +6,14 @@ import prisma from './prisma'
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret'
 const REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'refresh-dev-secret'
 
+// Crash on startup if production uses default secrets
+if (process.env.NODE_ENV === 'production') {
+  if (JWT_SECRET === 'dev-secret' || REFRESH_SECRET === 'refresh-dev-secret') {
+    console.error('🚨 FATAL: JWT_SECRET and JWT_REFRESH_SECRET must be set in production!')
+    process.exit(1)
+  }
+}
+
 // Token lifespans
 const ACCESS_TOKEN_LIFETIME = '15m' // 15 minutes
 const REFRESH_TOKEN_LIFETIME = '7d' // 7 days

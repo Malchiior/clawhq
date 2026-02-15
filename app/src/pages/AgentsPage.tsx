@@ -8,11 +8,18 @@ interface Agent {
   id: string
   name: string
   model: string
+  deployMode?: string
   status: string
   totalMessages: number
   totalTokens: number
   createdAt: string
   channels: { channel: { name: string; type: string } }[]
+}
+
+const deployBadge: Record<string, { label: string; color: string }> = {
+  LOCAL: { label: 'Local', color: 'bg-green-500/10 text-green-400' },
+  CLOUD: { label: 'Cloud', color: 'bg-purple-500/10 text-purple-400' },
+  DASHBOARD: { label: 'Dashboard', color: 'bg-blue-500/10 text-blue-400' },
 }
 
 const statusConfig: Record<string, { color: string; bg: string; label: string }> = {
@@ -169,6 +176,11 @@ export default function AgentsPage() {
                       <div>
                         <div className="flex items-center gap-2.5">
                           <h3 className="font-semibold text-text">{agent.name}</h3>
+                          {agent.deployMode && deployBadge[agent.deployMode] && (
+                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${deployBadge[agent.deployMode].color}`}>
+                              {deployBadge[agent.deployMode].label}
+                            </span>
+                          )}
                           <div className="flex items-center gap-1.5">
                             <div className={`w-2 h-2 rounded-full ${s.bg} ${agent.status === 'RUNNING' ? 'animate-pulse' : ''}`} />
                             <span className={`text-xs font-medium ${s.color}`}>{s.label}</span>
