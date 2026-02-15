@@ -107,21 +107,32 @@ function processMessage(userId: string, message: string): { reply: string; setup
       const lower = m.toLowerCase()
       if (lower.includes('detected') && !lower.includes('not')) {
         state.gatewayUrl = 'http://localhost:18789'
-        state.step = 'connector_name'
-        return { reply: "✅ We detected OpenClaw running on this PC! What would you like to name your agent?" }
+        state.step = 'connector_confirm_gateway'
+        return { reply: "✅ We detected a local OpenClaw gateway at `localhost:18789`!\n\nWant to use this one, or connect to a **remote server** instead?" }
       }
-      // Not detected — ask if remote or alternate port
+      // Not detected
       state.step = 'connector_url'
-      return { reply: "We couldn't detect OpenClaw on this PC. Are you running it on a **remote server** or a **different port**?\n\nPaste your gateway URL (e.g. `https://your-server.com:18789` or `http://localhost:8080`)." }
+      return { reply: "We couldn't detect OpenClaw on this PC. Are you running it on a **remote server** or a **different port**?\n\nPaste your gateway URL (e.g. `https://your-server.com:18789` or `http://192.168.1.100:18789`)." }
+    }
+
+    case 'connector_confirm_gateway': {
+      const lower = m.toLowerCase()
+      if (lower.includes('remote') || lower.includes('different') || lower.includes('other') || lower.includes('no')) {
+        state.step = 'connector_url'
+        return { reply: "No problem! Paste your remote gateway URL (e.g. `https://your-server.com:18789`)." }
+      }
+      // User wants the local one (yes, use this, this one, etc.)
+      state.step = 'connector_name'
+      return { reply: "Great! What would you like to name your agent? Something like \"My Assistant\" or \"Buddha Bot\"." }
     }
 
     case 'connector_url': {
-      if (!m.includes('http') && !m.includes('localhost')) {
-        return { reply: "That doesn't look like a URL. Your gateway URL usually looks like `http://localhost:18789`. What is it?" }
+      if (!m.includes('http') && !m.includes('localhost') && !m.match(/\d+\.\d+\.\d+/)) {
+        return { reply: "That doesn't look like a URL. It usually looks like `http://localhost:18789` or `https://your-server.com:18789`. What is it?" }
       }
       state.gatewayUrl = m
       state.step = 'connector_name'
-      return { reply: "Got it! Now, what would you like to name your agent? Something like \"My Assistant\" or \"Support Bot\"." }
+      return { reply: `Got it — connecting to ${m}. What would you like to name your agent?` }
     }
 
     case 'connector_name': {
@@ -133,7 +144,7 @@ function processMessage(userId: string, message: string): { reply: string; setup
       state.agentName = m
       state.step = 'confirm'
       return {
-        reply: `Perfect! Here's what we're setting up:\n\n🔗 **Mode:** Connect Existing\n🌐 **Gateway:** ${state.gatewayUrl}\n🤖 **Agent Name:** ${state.agentName}\n\nLook good? Type **yes** to finish. (Not on localhost:18789? Just paste your custom URL instead.)`,
+        reply: `Perfect! Here's your setup:\n\n🔗 **Mode:** Connect Existing\n🌐 **Gateway:** ${state.gatewayUrl}\n🤖 **Agent Name:** ${state.agentName}\n\nLook good? Type **yes** to finish setup!`,
       }
     }
 
