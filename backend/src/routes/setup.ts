@@ -389,15 +389,17 @@ router.get('/bridge-download', (req, res) => {
 const CLAWHQ='${apiUrl}';
 const TOKEN='${t}';
 const AGENT='${a}';
+const OC_TOKEN=process.env.OPENCLAW_TOKEN||process.env.OPENCLAW_GATEWAY_TOKEN||'';
 const s=io(CLAWHQ,{auth:{token:TOKEN},reconnection:true,reconnectionDelay:5000});
 s.on('connect',()=>{console.log('[Bridge] Connected to ClawHQ!');s.emit('bridge:register',{agentId:AGENT})});
 s.on('bridge:registered',()=>{console.log('[Bridge] Registered - ready to relay messages');console.log('');console.log('========================================');console.log('  DO NOT CLOSE THIS WINDOW!');console.log('  The bridge must stay running to');console.log('  relay messages to your agent.');console.log('========================================');console.log('')});
 s.on('bridge:message',async(d)=>{
   console.log('[Bridge] Message:',d.content);
   try{
-    const r=await fetch('http://127.0.0.1:18789/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'openclaw:main',messages:[{role:'user',content:d.content}],stream:false})});
+    const hdrs={'Content-Type':'application/json'};if(OC_TOKEN)hdrs['Authorization']='Bearer '+OC_TOKEN;
+    const r=await fetch('http://127.0.0.1:18789/v1/chat/completions',{method:'POST',headers:hdrs,body:JSON.stringify({model:'openclaw:main',messages:[{role:'user',content:d.content}],stream:false})});
     if(r.ok){const j=await r.json();s.emit('bridge:response',{agentId:AGENT,messageId:d.messageId,content:j.choices[0].message.content})}
-    else{await fetch('http://127.0.0.1:18789/hooks/wake',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:d.content,mode:'now'})});s.emit('bridge:response',{agentId:AGENT,messageId:d.messageId,content:'Sent via webhook.'})}
+    else{const wh={'Content-Type':'application/json'};if(OC_TOKEN)wh['Authorization']='Bearer '+OC_TOKEN;await fetch('http://127.0.0.1:18789/hooks/wake',{method:'POST',headers:wh,body:JSON.stringify({text:d.content,mode:'now'})});s.emit('bridge:response',{agentId:AGENT,messageId:d.messageId,content:'Sent via webhook.'})}
   }catch(e){console.error('[Bridge] Error:',e.message);s.emit('bridge:response',{agentId:AGENT,messageId:d.messageId,content:'Error: '+e.message})}
 });
 s.on('disconnect',r=>console.log('[Bridge] Disconnected:',r));
@@ -405,7 +407,7 @@ s.on('connect_error',e=>console.error('[Bridge] Error:',e.message));
 setInterval(()=>{},30000);
 console.log('[Bridge] Running...');`
   const b64 = Buffer.from(bridgeJs).toString('base64')
-  const batch = `@echo off\r\necho ========================================\r\necho    ClawHQ Bridge Setup\r\necho ========================================\r\necho.\r\nwhere node >nul 2>&1\r\nif %errorlevel% neq 0 (\r\n  echo ERROR: Node.js is required.\r\n  echo Download it at https://nodejs.org\r\n  pause\r\n  exit /b 1\r\n)\r\nset "BRIDGE_DIR=%USERPROFILE%\\ClawHQ\\bridge"\r\nif not exist "%BRIDGE_DIR%" (\r\n  echo Creating %BRIDGE_DIR%...\r\n  mkdir "%BRIDGE_DIR%"\r\n)\r\ncd /d "%BRIDGE_DIR%"\r\nif not exist node_modules (\r\n  echo Installing dependencies in %BRIDGE_DIR%...\r\n  echo {"name":"clawhq-bridge","private":true,"dependencies":{"socket.io-client":"^4.7.4"}}> package.json\r\n  call npm install --silent 2>nul\r\n  echo.\r\n)\r\nnode -e "require('fs').writeFileSync('bridge.js',Buffer.from('${b64}','base64').toString())"\r\necho.\r\necho Starting ClawHQ Bridge...\r\necho.\r\nnode bridge.js\r\npause\r\n`
+  const batch = `@echo off\r\necho ========================================\r\necho    ClawHQ Bridge Setup\r\necho ========================================\r\necho.\r\nwhere node >nul 2>&1\r\nif %errorlevel% neq 0 (\r\n  echo ERROR: Node.js is required.\r\n  echo Download it at https://nodejs.org\r\n  pause\r\n  exit /b 1\r\n)\r\nset "BRIDGE_DIR=%USERPROFILE%\\ClawHQ\\bridge"\r\nif not exist "%BRIDGE_DIR%" (\r\n  echo Creating %BRIDGE_DIR%...\r\n  mkdir "%BRIDGE_DIR%"\r\n)\r\ncd /d "%BRIDGE_DIR%"\r\nif not exist node_modules (\r\n  echo Installing dependencies in %BRIDGE_DIR%...\r\n  echo {"name":"clawhq-bridge","private":true,"dependencies":{"socket.io-client":"^4.7.4"}}> package.json\r\n  call npm install --silent 2>nul\r\n  echo.\r\n)\r\nif not defined OPENCLAW_TOKEN (\r\n  echo Your OpenClaw gateway requires an auth token.\r\n  echo Find it in your openclaw.json under gateway.auth.token\r\n  echo Or set OPENCLAW_GATEWAY_TOKEN environment variable.\r\n  echo.\r\n  set /p OPENCLAW_TOKEN="Paste your OpenClaw gateway token (or press Enter to skip): "\r\n)\r\nnode -e "require('fs').writeFileSync('bridge.js',Buffer.from('${b64}','base64').toString())"\r\necho.\r\necho Starting ClawHQ Bridge...\r\necho.\r\nnode bridge.js\r\npause\r\n`
   res.setHeader('Content-Type', 'application/octet-stream')
   res.setHeader('Content-Disposition', 'attachment; filename="clawhq-bridge.bat"')
   res.send(batch)
