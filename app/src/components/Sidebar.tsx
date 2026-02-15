@@ -14,7 +14,7 @@ const iconMap: Record<string, React.ComponentType<{ size?: number; className?: s
   LayoutDashboard, MessageCircle, Bot, CheckSquare, FolderKanban,
   StickyNote, CalendarDays, TrendingUp, Wallet, Image, Shield,
   Zap, Target, Lightbulb, Clock, Settings, FileText,
-  Users, BarChart3, Lock, Archive
+  Users, BarChart3, Lock
 }
 
 interface PageConfig {
