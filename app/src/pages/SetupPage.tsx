@@ -97,7 +97,7 @@ export default function SetupPage() {
           await apiFetch('/api/setup/bridge-connected', { method: 'POST' })
           clearSession()
           setProgress(100)
-          setTimeout(() => { window.location.href = '/dashboard' }, 2000)
+          setTimeout(() => { window.location.href = `/agents/${bridgeData.agentId}/chat` }, 2000)
         }
       } catch {}
     }, 3000)

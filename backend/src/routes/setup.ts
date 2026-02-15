@@ -391,7 +391,7 @@ const TOKEN='${t}';
 const AGENT='${a}';
 const s=io(CLAWHQ,{auth:{token:TOKEN},reconnection:true,reconnectionDelay:5000});
 s.on('connect',()=>{console.log('[Bridge] Connected to ClawHQ!');s.emit('bridge:register',{agentId:AGENT})});
-s.on('bridge:registered',()=>console.log('[Bridge] Registered - ready to relay messages'));
+s.on('bridge:registered',()=>{console.log('[Bridge] Registered - ready to relay messages');console.log('');console.log('========================================');console.log('  DO NOT CLOSE THIS WINDOW!');console.log('  The bridge must stay running to');console.log('  relay messages to your agent.');console.log('========================================');console.log('')});
 s.on('bridge:message',async(d)=>{
   console.log('[Bridge] Message:',d.content);
   try{
