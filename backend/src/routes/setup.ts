@@ -5,6 +5,7 @@
  */
 
 import { Router, Response } from 'express'
+import jwt from 'jsonwebtoken'
 import prisma from '../lib/prisma'
 import { authenticate, AuthRequest } from '../middleware/auth'
 
@@ -282,7 +283,13 @@ router.post('/message', authenticate, async (req: AuthRequest, res: Response) =>
       if ((result as any).bridgeSetup) {
         // CONNECTOR path: don't mark setup complete yet — wait for bridge
         setupStates.delete(userId)
-        const token = req.headers.authorization?.slice(7) || ''
+        // Generate a long-lived bridge token (30 days)
+        const secret = process.env.JWT_SECRET || 'dev-secret'
+        const token = jwt.sign(
+          { userId, type: 'access', bridge: true },
+          secret,
+          { expiresIn: '30d' }
+        )
         return res.json({
           reply: result.reply,
           setupComplete: false,
