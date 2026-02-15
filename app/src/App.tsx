@@ -29,6 +29,7 @@ import SetupPage from './pages/SetupPage'
 import ChatHubPage from './pages/ChatHubPage'
 import TasksPage from './pages/TasksPage'
 import ProjectsPage from './pages/ProjectsPage'
+import ProjectDetailPage from './pages/ProjectDetailPage'
 import NotesPage from './pages/NotesPage'
 import CalendarPage from './pages/CalendarPage'
 import AutomationsPage from './pages/AutomationsPage'
@@ -85,6 +86,7 @@ export default function App() {
         <Route path="chat" element={<ChatHubPage />} />
         <Route path="tasks" element={<TasksPage />} />
         <Route path="projects" element={<ProjectsPage />} />
+        <Route path="projects/:id" element={<ProjectDetailPage />} />
         <Route path="notes" element={<NotesPage />} />
         <Route path="calendar" element={<CalendarPage />} />
         <Route path="automations" element={<AutomationsPage />} />

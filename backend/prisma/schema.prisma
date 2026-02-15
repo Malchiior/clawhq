@@ -57,6 +57,7 @@ model User {
   sessions      Session[]
   tickets       SupportTicket[]
   pageConfigs   UserPageConfig[]
+  projects      Project[]
 }
 
 model Session {
@@ -370,4 +371,40 @@ model UserPageConfig {
   
   @@unique([userId, slug])
   @@index([userId, archived, sortOrder])
+}
+
+model Project {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  template    String
+  status      String   @default("discovery")
+  progress    Int      @default(0)
+  color       String   @default("#7c3aed")
+  techStack   String[] @default([])
+  startedFrom String   @default("scratch")
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  items       ProjectItem[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
+}
+
+model ProjectItem {
+  id          String   @id @default(cuid())
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  stage       String
+  category    String?
+  title       String
+  description String?
+  completed   Boolean  @default(false)
+  order       Int      @default(0)
+  blockedBy   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([projectId])
 }
