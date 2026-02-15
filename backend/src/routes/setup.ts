@@ -190,7 +190,7 @@ function processMessage(userId: string, message: string): { reply: string; setup
     // ── Confirmation ──
     case 'confirm': {
       if (m.toLowerCase().includes('yes') || m.toLowerCase().includes('confirm') || m.toLowerCase() === 'y') {
-        const deployMode = state.path === 'cloud' ? 'CLOUD' : state.path === 'connector' ? 'CONNECTOR' : 'LOCAL'
+        const deployMode = state.path === 'cloud' ? 'CLOUD' : state.path === 'connector' ? 'LOCAL' : 'LOCAL'
         return {
           reply: `🎉 **Your agent "${state.agentName}" is ready!** Redirecting you to your dashboard...`,
           setupComplete: true,
@@ -249,7 +249,7 @@ router.post('/message', authenticate, async (req: AuthRequest, res: Response) =>
           model: data.model || 'claude-sonnet-4-20250514',
           systemPrompt: data.systemPrompt || 'You are a helpful AI assistant.',
           deployMode: data.deployMode || 'CLOUD',
-          status: data.deployMode === 'CLOUD' ? 'DEPLOYING' : 'STOPPED',
+          status: 'STOPPED',
           userId,
         }
       })
