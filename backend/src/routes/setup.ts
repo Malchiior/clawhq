@@ -87,8 +87,8 @@ function processMessage(userId: string, message: string): { reply: string; setup
       state.path = path
 
       if (path === 'connector') {
-        state.step = 'connector_detect'
-        return { reply: "Great choice! 🔗 ClawHQ becomes your web & mobile interface for OpenClaw.\n\nChecking for OpenClaw on your machine...", detect: true }
+        state.step = 'connector_location'
+        return { reply: "Great choice! 🔗 ClawHQ becomes your web & mobile interface for OpenClaw.\n\nIs OpenClaw running on **this PC** or a **remote server**?" }
       }
       if (path === 'cloud') {
         state.step = 'cloud_name'
@@ -102,28 +102,18 @@ function processMessage(userId: string, message: string): { reply: string; setup
     }
 
     // ── Connector Path ──
-    case 'connector_detect': {
-      // Frontend sends "detected" or "not_detected" after trying localhost:18789
+    case 'connector_location': {
       const lower = m.toLowerCase()
-      if (lower.includes('detected') && !lower.includes('not')) {
+      if (lower.includes('this') || lower.includes('local') || lower.includes('same') || lower.includes('pc') || lower.includes('yes')) {
         state.gatewayUrl = 'http://localhost:18789'
-        state.step = 'connector_confirm_gateway'
-        return { reply: "✅ We detected a local OpenClaw gateway at `localhost:18789`!\n\nWant to use this one, or connect to a **remote server** instead?" }
+        state.step = 'connector_name'
+        return { reply: "Perfect — we'll connect to `localhost:18789`. What would you like to name your agent?" }
       }
-      // Not detected
-      state.step = 'connector_url'
-      return { reply: "We couldn't detect OpenClaw on this PC. Are you running it on a **remote server** or a **different port**?\n\nPaste your gateway URL (e.g. `https://your-server.com:18789` or `http://192.168.1.100:18789`)." }
-    }
-
-    case 'connector_confirm_gateway': {
-      const lower = m.toLowerCase()
-      if (lower.includes('remote') || lower.includes('different') || lower.includes('other') || lower.includes('no')) {
+      if (lower.includes('remote') || lower.includes('server') || lower.includes('vps') || lower.includes('aws') || lower.includes('other') || lower.includes('no') || lower.includes('different')) {
         state.step = 'connector_url'
-        return { reply: "No problem! Paste your remote gateway URL (e.g. `https://your-server.com:18789`)." }
+        return { reply: "No problem! Paste your remote gateway URL (e.g. `https://your-server.com:18789` or `http://192.168.1.100:18789`)." }
       }
-      // User wants the local one (yes, use this, this one, etc.)
-      state.step = 'connector_name'
-      return { reply: "Great! What would you like to name your agent? Something like \"My Assistant\" or \"Buddha Bot\"." }
+      return { reply: "Is it on **this PC** or a **remote server**?" }
     }
 
     case 'connector_url': {

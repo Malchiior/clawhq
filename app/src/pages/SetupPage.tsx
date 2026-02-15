@@ -46,7 +46,6 @@ export default function SetupPage() {
   const [agentName, setAgentName] = useState('')
   const [progress, setProgress] = useState(saved.progress)
   const [handoffPhase, setHandoffPhase] = useState(0) // 0=none, 1=celebrating, 2=transitioning
-  const [showRetryDetect, setShowRetryDetect] = useState(false)
   const messagesRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -119,27 +118,7 @@ export default function SetupPage() {
         setMessages(prev => [...prev, { id: (Date.now()+1).toString(), role: 'assistant', content: data.reply }])
       }
 
-      // Auto-detect OpenClaw on localhost if backend requests it
-      if (data.detect) {
-        try {
-          const resp = await fetch('http://localhost:18789/api/health', { signal: AbortSignal.timeout(3000) })
-          if (resp.ok) {
-            setTimeout(() => sendMessage('detected'), 500)
-          } else {
-            setTimeout(() => sendMessage('not_detected'), 500)
-          }
-        } catch {
-          // Browser may block localhost access — show permission guidance
-          setMessages(prev => [...prev, {
-            id: (Date.now()+2).toString(), role: 'assistant',
-            content: "⚠️ Your browser may have blocked access to localhost. If you saw a popup asking to allow access, **click Allow** and then tap **Try Again** below.\n\nIf OpenClaw isn't running on this PC, just type your remote server URL instead."
-          }])
-          setLoading(false)
-          setShowRetryDetect(true)
-          return
-        }
-        return
-      }
+      // detect flag removed — using simple question instead
 
       if (data.setupComplete) {
         setProgress(100)
@@ -170,24 +149,6 @@ export default function SetupPage() {
       // Remove last assistant error message
       setMessages(prev => prev.slice(0, -1))
       sendMessage(lastUserMsg.content)
-    }
-  }
-
-  const retryDetect = async () => {
-    setShowRetryDetect(false)
-    setLoading(true)
-    try {
-      const resp = await fetch('http://localhost:18789/api/health', { signal: AbortSignal.timeout(3000) })
-      if (resp.ok) {
-        setMessages(prev => [...prev, { id: Date.now().toString(), role: 'assistant', content: '✅ Found it!' }])
-        setTimeout(() => sendMessage('detected'), 500)
-      } else {
-        sendMessage('not_detected')
-      }
-    } catch {
-      setMessages(prev => [...prev, { id: Date.now().toString(), role: 'assistant', content: "Still can't reach localhost:18789. Is OpenClaw running? You can also type your server URL directly." }])
-      setShowRetryDetect(true)
-      setLoading(false)
     }
   }
 
@@ -307,15 +268,7 @@ export default function SetupPage() {
           </div>
         )}
 
-        {showRetryDetect && !loading && (
-          <div className="flex justify-center mb-4">
-            <button onClick={retryDetect}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all hover:scale-[1.02] active:scale-[0.98]"
-              style={{ background: '#1a1a2e', border: '1px solid #7c3aed', color: '#a855f7' }}>
-              <RotateCcw size={14} /> Try Again (I clicked Allow)
-            </button>
-          </div>
-        )}
+        {/* Quick reply buttons shown contextually */}
       </div>
 
       {/* Quick replies */}
