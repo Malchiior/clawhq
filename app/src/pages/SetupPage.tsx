@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Send, Bot, Zap, ArrowRight, RotateCcw, Sparkles } from 'lucide-react'
 import { apiFetch } from '../lib/api'
+// Auth context refresh not needed - we use window.location for redirect
 
 interface Message {
   id: string
@@ -119,7 +120,7 @@ export default function SetupPage() {
         // Handoff animation sequence
         setHandoffPhase(1) // Celebration
         setTimeout(() => setHandoffPhase(2), 2000) // Transition
-        setTimeout(() => navigate('/dashboard'), 4000) // Redirect
+        setTimeout(() => { window.location.href = '/dashboard' }, 4000) // Full reload to refresh auth
       }
     } catch (err: any) {
       setError('Connection failed')
