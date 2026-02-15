@@ -171,15 +171,12 @@ router.post('/login', authLimiter, async (req: Request, res: Response) => {
       return
     }
 
-    // Check if email is verified
-    if (!user.emailVerified) {
-      res.status(403).json({ 
-        error: 'Email not verified',
-        needsVerification: true,
-        message: 'Please verify your email address before logging in.'
-      })
-      return
-    }
+    // Email verification check disabled — will be re-enabled when Resend is configured
+    // TODO: Re-enable email verification gate
+    // if (!user.emailVerified) {
+    //   res.status(403).json({ error: 'Email not verified', needsVerification: true, message: 'Please verify your email address before logging in.' })
+    //   return
+    // }
 
     const sessionInfo = getSessionInfo(req)
     const tokens = await createSession(user.id, sessionInfo)
