@@ -42,6 +42,9 @@ import { relayManager } from './lib/relay'
 const app = express()
 const PORT = parseInt(process.env.PORT || '3001', 10)
 
+// Trust proxy for Railway/Vercel (correct client IP behind reverse proxy)
+app.set('trust proxy', 1)
+
 app.use(helmet())
 const corsOrigins: string[] = [
   'https://clawhq.dev',
