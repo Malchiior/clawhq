@@ -65,18 +65,26 @@ export function initSocketIO(httpServer: HttpServer, corsOrigins: string[]) {
       if (!token) return next(new Error('Authentication required'))
 
       const secret = process.env.JWT_SECRET || 'dev-secret'
-      const payload = jwt.verify(token, secret) as { sessionId: string }
+      const payload = jwt.verify(token, secret) as { sessionId?: string; userId?: string; jti?: string; type?: string }
 
-      // Look up session
-      const session = await prisma.session.findUnique({
-        where: { id: payload.sessionId },
-      })
-      if (!session || session.isRevoked || session.expiresAt < new Date()) {
-        return next(new Error('Invalid session'))
+      // Support both session-based tokens and access tokens
+      if (payload.userId && payload.type === 'access') {
+        // Access token — verify user exists
+        const user = await prisma.user.findUnique({ where: { id: payload.userId } })
+        if (!user) return next(new Error('Invalid user'))
+        ;(socket as any).userId = payload.userId
+      } else if (payload.sessionId) {
+        // Session-based token
+        const session = await prisma.session.findUnique({
+          where: { id: payload.sessionId },
+        })
+        if (!session || session.isRevoked || session.expiresAt < new Date()) {
+          return next(new Error('Invalid session'))
+        }
+        ;(socket as any).userId = session.userId
+      } else {
+        return next(new Error('Invalid token format'))
       }
-
-      // Attach userId to socket
-      ;(socket as any).userId = session.userId
       next()
     } catch {
       next(new Error('Authentication failed'))
