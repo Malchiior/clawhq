@@ -3,6 +3,7 @@ import prisma from '../lib/prisma'
 import { authenticate, AuthRequest } from '../middleware/auth'
 import { relayManager } from '../lib/relay'
 import { proxyChatForUser } from '../lib/ai-proxy'
+import { emitChatMessage } from '../lib/socket'
 import multer from 'multer'
 
 const router = Router()
@@ -279,6 +280,10 @@ router.post('/:agentId/messages', authenticate, async (req: AuthRequest, res: Re
         },
       },
     })
+
+    // Emit real-time messages via Socket.io
+    emitChatMessage(agentId, userMessage)
+    emitChatMessage(agentId, assistantMessage)
 
     // Update agent stats
     await prisma.agent.update({

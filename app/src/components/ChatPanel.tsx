@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback, forwardRef, useImperativeHand
 import { motion, AnimatePresence } from 'framer-motion'
 import { Send, Loader2, Trash2, Bot, User, AlertCircle, ChevronDown, Sparkles, MessageSquare, ImagePlus, Paperclip, X, ZoomIn, FileText, FileCode, FileSpreadsheet, File, Download, Eye, Search, ChevronUp } from 'lucide-react'
 import { apiFetch, apiUpload } from '../lib/api'
+import { getSocket } from '../lib/socket'
 import MessageContent from './MessageContent'
 
 interface Attachment {
@@ -93,16 +94,29 @@ const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function ChatPanel
     return () => { mounted = false }
   }, [agentId, scrollToBottom])
 
-  // Poll for new messages every 3s
+  // Real-time messages via Socket.io (with polling fallback)
   useEffect(() => {
-    if (messages.length === 0) return
+    const socket = getSocket()
+    socket.emit('join:agent', agentId)
 
+    const handleMessage = (msg: ChatMessage) => {
+      setMessages(prev => {
+        if (prev.some(m => m.id === msg.id)) return prev
+        return [...prev, msg]
+      })
+      scrollToBottom()
+    }
+
+    socket.on('chat:message', handleMessage)
+
+    // Fallback polling every 10s in case WebSocket disconnects
     pollRef.current = setInterval(async () => {
+      if (socket.connected) return // Skip polling when socket is live
       try {
         const lastMsg = messages[messages.length - 1]
         if (!lastMsg) return
         const data = await apiFetch(`/api/chat/${agentId}/poll?since=${lastMsg.createdAt}`)
-        if (data.messages.length > 0) {
+        if (data.messages?.length > 0) {
           setMessages(prev => {
             const existingIds = new Set(prev.map(m => m.id))
             const newMsgs = data.messages.filter((m: ChatMessage) => !existingIds.has(m.id))
@@ -114,9 +128,11 @@ const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function ChatPanel
       } catch {
         // Silent poll failure
       }
-    }, 3000)
+    }, 10000)
 
     return () => {
+      socket.off('chat:message', handleMessage)
+      socket.emit('leave:agent', agentId)
       if (pollRef.current) clearInterval(pollRef.current)
     }
   }, [agentId, messages.length, scrollToBottom])

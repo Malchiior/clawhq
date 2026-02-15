@@ -39,6 +39,7 @@ import pageRoutes from './routes/pages'
 import healthMonitor from './lib/health-monitor'
 import { containerOrchestrator } from './lib/containerOrchestrator'
 import { relayManager } from './lib/relay'
+import { initSocketIO } from './lib/socket'
 
 const app = express()
 const PORT = parseInt(process.env.PORT || '3001', 10)
@@ -131,6 +132,9 @@ const server = createServer(app)
 
 // Attach WebSocket relay to the HTTP server
 relayManager.attach(server)
+
+// Initialize Socket.io for real-time updates
+initSocketIO(server, corsOrigins)
 
 server.listen(PORT, async () => {
   console.log(`🚀 ClawHQ API running on port ${PORT}`)
