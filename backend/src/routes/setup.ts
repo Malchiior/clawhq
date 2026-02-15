@@ -74,7 +74,7 @@ function getState(userId: string): SetupState {
   return setupStates.get(userId)!
 }
 
-function processMessage(userId: string, message: string): { reply: string; setupComplete?: boolean; setupData?: any; detect?: boolean } {
+function processMessage(userId: string, message: string): { reply: string; setupComplete?: boolean; setupData?: any; detect?: boolean; bridgeSetup?: boolean } {
   const state = getState(userId)
   const m = message.trim()
 
@@ -207,9 +207,13 @@ function processMessage(userId: string, message: string): { reply: string; setup
     case 'confirm': {
       if (m.toLowerCase().includes('yes') || m.toLowerCase().includes('confirm') || m.toLowerCase() === 'y') {
         const deployMode = state.path === 'cloud' ? 'CLOUD' : state.path === 'connector' ? 'CONNECTOR' : 'DESKTOP'
+        const needsBridge = state.path === 'connector'
         return {
-          reply: `🎉 **Your agent "${state.agentName}" is ready!** Redirecting you to your dashboard...`,
-          setupComplete: true,
+          reply: needsBridge
+            ? `Agent created! Now let's connect your bridge...`
+            : `🎉 **Your agent "${state.agentName}" is ready!** Redirecting you to your dashboard...`,
+          setupComplete: !needsBridge,
+          bridgeSetup: needsBridge || undefined,
           setupData: {
             deployMode,
             agentName: state.agentName || 'My Agent',
@@ -255,7 +259,7 @@ router.post('/message', authenticate, async (req: AuthRequest, res: Response) =>
 
     const result = processMessage(userId, message)
 
-    if (result.setupComplete && result.setupData) {
+    if ((result.setupComplete || (result as any).bridgeSetup) && result.setupData) {
       const data = result.setupData
       const agent = await prisma.agent.create({
         data: {
@@ -267,6 +271,21 @@ router.post('/message', authenticate, async (req: AuthRequest, res: Response) =>
           userId,
         }
       })
+
+      if ((result as any).bridgeSetup) {
+        // CONNECTOR path: don't mark setup complete yet — wait for bridge
+        setupStates.delete(userId)
+        const token = req.headers.authorization?.slice(7) || ''
+        return res.json({
+          reply: result.reply,
+          setupComplete: false,
+          bridgeSetup: true,
+          agentId: agent.id,
+          agentName: agent.name,
+          bridgeToken: token,
+          bridgeCommand: `npx clawhq-bridge --token=${token} --agent=${agent.id}`,
+        })
+      }
 
       await prisma.user.update({
         where: { id: userId },
@@ -287,6 +306,20 @@ router.post('/message', authenticate, async (req: AuthRequest, res: Response) =>
   } catch (err: any) {
     console.error('Setup error:', err)
     res.status(500).json({ error: 'Something went wrong. Please try again.' })
+  }
+})
+
+// POST /api/setup/bridge-connected
+router.post('/bridge-connected', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    await prisma.user.update({
+      where: { id: req.userId! },
+      data: { setupComplete: true, setupStep: 'complete' }
+    })
+    setupStates.delete(req.userId!)
+    res.json({ success: true })
+  } catch (err: any) {
+    res.status(500).json({ error: err.message })
   }
 })
 

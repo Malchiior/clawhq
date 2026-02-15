@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Send, Bot, Zap, ArrowRight, RotateCcw, Sparkles } from 'lucide-react'
+import { Send, Bot, Zap, ArrowRight, RotateCcw, Sparkles, Download, Copy, Check } from 'lucide-react'
 import { apiFetch } from '../lib/api'
 // Auth context refresh not needed - we use window.location for redirect
 
@@ -46,6 +46,9 @@ export default function SetupPage() {
   const [agentName, setAgentName] = useState('')
   const [progress, setProgress] = useState(saved.progress)
   const [handoffPhase, setHandoffPhase] = useState(0) // 0=none, 1=celebrating, 2=transitioning
+  const [bridgeData, setBridgeData] = useState<{ agentId: string; agentName: string; bridgeToken: string; bridgeCommand: string } | null>(null)
+  const [bridgeConnected, setBridgeConnected] = useState(false)
+  const [copied, setCopied] = useState(false)
   const messagesRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -77,6 +80,26 @@ export default function SetupPage() {
         saveSession(fallback, 0)
       })
   }, [])
+
+  // Bridge polling
+  useEffect(() => {
+    if (!bridgeData || bridgeConnected) return
+    const interval = setInterval(async () => {
+      try {
+        const data = await apiFetch(`/api/chat/${bridgeData.agentId}/bridge-status`)
+        if (data.connected) {
+          setBridgeConnected(true)
+          clearInterval(interval)
+          setMessages(prev => [...prev, { id: 'bridge-ok', role: 'assistant', content: '✅ **Bridge connected!** Redirecting to your dashboard...' }])
+          await apiFetch('/api/setup/bridge-connected', { method: 'POST' })
+          clearSession()
+          setProgress(100)
+          setTimeout(() => { window.location.href = '/dashboard' }, 2000)
+        }
+      } catch {}
+    }, 3000)
+    return () => clearInterval(interval)
+  }, [bridgeData, bridgeConnected])
 
   // Persist session
   useEffect(() => { saveSession(messages, progress) }, [messages, progress])
@@ -120,7 +143,16 @@ export default function SetupPage() {
 
       // detect flag removed — using simple question instead
 
-      if (data.setupComplete) {
+      if (data.bridgeSetup) {
+        setProgress(80)
+        setSetupComplete(true) // hide input
+        setBridgeData({
+          agentId: data.agentId,
+          agentName: data.agentName,
+          bridgeToken: data.bridgeToken,
+          bridgeCommand: data.bridgeCommand,
+        })
+      } else if (data.setupComplete) {
         setProgress(100)
         setSetupComplete(true)
         setAgentName(data.agentName || 'Your Agent')
@@ -269,6 +301,59 @@ export default function SetupPage() {
         )}
 
         {/* Quick reply buttons shown contextually */}
+
+        {/* Bridge Setup Card */}
+        {bridgeData && !bridgeConnected && (
+          <div className="mb-4 ml-9 sm:ml-11">
+            <div className="rounded-2xl p-5 sm:p-6" style={{
+              background: '#1a1a2e',
+              border: '1px solid #7c3aed',
+              boxShadow: '0 0 20px rgba(124, 58, 237, 0.15)',
+            }}>
+              <h3 className="text-white font-semibold text-base mb-4">🔗 Connect your bridge</h3>
+
+              {/* Option A: Download */}
+              <a href="https://clawhq.dev/download/bridge" target="_blank" rel="noopener noreferrer"
+                className="flex items-center justify-center gap-2 w-full px-4 py-2.5 rounded-xl text-sm font-medium mb-4 transition-all hover:scale-[1.02] active:scale-[0.98]"
+                style={{ background: 'linear-gradient(135deg, #7c3aed, #a855f7)', color: '#fff' }}>
+                <Download size={16} /> Download ClawHQ Bridge
+              </a>
+
+              {/* Divider */}
+              <div className="flex items-center gap-3 mb-4">
+                <div className="flex-1 h-px" style={{ background: '#2a2a4a' }} />
+                <span className="text-xs text-gray-500">or run with npx</span>
+                <div className="flex-1 h-px" style={{ background: '#2a2a4a' }} />
+              </div>
+
+              {/* Option B: npx command */}
+              <div className="relative rounded-lg p-3 mb-4" style={{ background: '#0a0a1a', border: '1px solid #2a2a4a' }}>
+                <code className="text-xs sm:text-sm text-purple-300 break-all select-all">{bridgeData.bridgeCommand}</code>
+                <button
+                  onClick={() => { navigator.clipboard.writeText(bridgeData.bridgeCommand); setCopied(true); setTimeout(() => setCopied(false), 2000) }}
+                  className="absolute top-2 right-2 p-1.5 rounded-md transition-colors hover:bg-white/10"
+                  title="Copy command"
+                >
+                  {copied ? <Check size={14} className="text-green-400" /> : <Copy size={14} className="text-gray-400" />}
+                </button>
+              </div>
+
+              {/* Waiting indicator */}
+              <div className="flex items-center gap-2 text-sm text-gray-400">
+                <span className="relative flex h-2.5 w-2.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-purple-400 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-purple-500" />
+                </span>
+                Waiting for bridge to connect...
+              </div>
+            </div>
+
+            {/* Skip link */}
+            <button onClick={skipSetup} className="mt-3 text-xs text-gray-500 hover:text-gray-300 transition-colors">
+              Skip for now →
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Quick replies */}
