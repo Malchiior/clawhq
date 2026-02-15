@@ -3,6 +3,7 @@ import { motion } from 'framer-motion'
 import { Bot, Square, Play, RotateCcw, Settings, Terminal, Activity, MessageSquare, Zap, Clock, AlertCircle, CheckCircle, Info, Trash2, ArrowLeft, Loader2, Brain, Puzzle, Check, Rocket } from 'lucide-react'
 import { useState, useEffect, useCallback } from 'react'
 import { apiFetch } from '../lib/api'
+import { getSocket } from '../lib/socket'
 import HealthMonitor from '../components/HealthMonitor'
 import MemoryManager from '../components/MemoryManager'
 import ChatPanel from '../components/ChatPanel'
@@ -136,16 +137,31 @@ export default function AgentDetailPage() {
 
   useEffect(() => { fetchAgent() }, [fetchAgent])
 
-  // Poll logs every 10s when on logs tab
+  // Real-time log streaming via Socket.io + initial fetch
   useEffect(() => {
-    if (tab !== 'logs') return
+    if (tab !== 'logs' || !id) return
+
+    const socket = getSocket()
+    socket.emit('join:agent', id)
+
+    const handler = (log: AgentLog) => {
+      setLogs(prev => [log, ...prev].slice(0, 200))
+    }
+    socket.on('agent:log', handler)
+
+    // Also poll every 30s as fallback
     const interval = setInterval(async () => {
       try {
         const data = await apiFetch(`/api/agents/${id}/logs`)
         setLogs(data.logs)
       } catch { /* silent */ }
-    }, 10000)
-    return () => clearInterval(interval)
+    }, 30000)
+
+    return () => {
+      socket.off('agent:log', handler)
+      socket.emit('leave:agent', id)
+      clearInterval(interval)
+    }
   }, [id, tab])
 
   const doAction = async (action: string) => {
