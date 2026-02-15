@@ -94,8 +94,8 @@ function processMessage(userId: string, message: string): { reply: string; setup
         return { reply: "Great choice! 🔗\n\nWhat's your OpenClaw gateway URL? It usually looks like `http://localhost:18789` or `https://your-server.com:18789`." }
       }
       if (path === 'cloud') {
-        state.step = 'cloud_purpose'
-        return { reply: "Awesome! Cloud Deploy is the fastest way to get started. ☁️\n\nFirst, what do you want your agent to do? For example:\n- Customer support bot\n- Personal assistant\n- Code helper\n- Content writer\n\nJust describe it in a sentence or two." }
+        state.step = 'cloud_name'
+        return { reply: "Awesome! Cloud Deploy is the fastest way to get started. ☁️\n\nWhat would you like to name your agent?" }
       }
       if (path === 'download') {
         state.step = 'download_os'
