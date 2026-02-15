@@ -49,15 +49,22 @@ export default function SetupPage() {
   const messagesRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  // Load initial message if no session
+  // Load initial message - always check status first
   useEffect(() => {
-    if (messages.length > 0) return // Resume existing session
     apiFetch('/api/setup/status')
       .then((data: any) => {
         if (!data.setupRequired) { navigate('/dashboard'); return }
+        // Setup required — clear any stale session from a different account
+        if (messages.length > 0) {
+          // Check if existing session is stale by seeing if first message matches
+          // For safety, always reset for fresh setup
+          clearSession()
+        }
         if (data.initialMessage) {
           const init = [{ id: 'init', role: 'assistant' as const, content: data.initialMessage }]
           setMessages(init)
+          setProgress(0)
+          setShowQuickReplies(true)
           saveSession(init, 0)
         }
       })
