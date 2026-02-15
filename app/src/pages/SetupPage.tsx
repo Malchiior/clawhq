@@ -118,6 +118,22 @@ export default function SetupPage() {
         setMessages(prev => [...prev, { id: (Date.now()+1).toString(), role: 'assistant', content: data.reply }])
       }
 
+      // Auto-detect OpenClaw on localhost if backend requests it
+      if (data.detect) {
+        try {
+          const resp = await fetch('http://localhost:18789/api/health', { signal: AbortSignal.timeout(3000) })
+          if (resp.ok) {
+            // Found it — auto-send detection result
+            setTimeout(() => sendMessage('detected'), 500)
+          } else {
+            setTimeout(() => sendMessage('not_detected'), 500)
+          }
+        } catch {
+          setTimeout(() => sendMessage('not_detected'), 500)
+        }
+        return // Don't proceed to setupComplete check yet
+      }
+
       if (data.setupComplete) {
         setProgress(100)
         setSetupComplete(true)

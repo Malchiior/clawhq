@@ -74,7 +74,7 @@ function getState(userId: string): SetupState {
   return setupStates.get(userId)!
 }
 
-function processMessage(userId: string, message: string): { reply: string; setupComplete?: boolean; setupData?: any } {
+function processMessage(userId: string, message: string): { reply: string; setupComplete?: boolean; setupData?: any; detect?: boolean } {
   const state = getState(userId)
   const m = message.trim()
 
@@ -87,8 +87,8 @@ function processMessage(userId: string, message: string): { reply: string; setup
       state.path = path
 
       if (path === 'connector') {
-        state.step = 'connector_location'
-        return { reply: "Great choice! 🔗 ClawHQ becomes your web & mobile interface for OpenClaw.\n\nIs OpenClaw running on **this PC** or a **remote server** (like a VPS, Mac mini, AWS, etc.)?" }
+        state.step = 'connector_detect'
+        return { reply: "Great choice! 🔗 ClawHQ becomes your web & mobile interface for OpenClaw.\n\nChecking for OpenClaw on your machine...", detect: true }
       }
       if (path === 'cloud') {
         state.step = 'cloud_name'
@@ -102,18 +102,17 @@ function processMessage(userId: string, message: string): { reply: string; setup
     }
 
     // ── Connector Path ──
-    case 'connector_location': {
+    case 'connector_detect': {
+      // Frontend sends "detected" or "not_detected" after trying localhost:18789
       const lower = m.toLowerCase()
-      if (lower.includes('this pc') || lower.includes('this computer') || lower.includes('local') || lower.includes('same') || lower === 'this') {
+      if (lower.includes('detected') && !lower.includes('not')) {
         state.gatewayUrl = 'http://localhost:18789'
         state.step = 'connector_name'
-        return { reply: "Perfect — we'll connect to `localhost:18789`. What would you like to name your agent?" }
+        return { reply: "✅ We detected OpenClaw running on this PC! What would you like to name your agent?" }
       }
-      if (lower.includes('remote') || lower.includes('server') || lower.includes('vps') || lower.includes('aws') || lower.includes('mac mini') || lower.includes('other') || lower.includes('different')) {
-        state.step = 'connector_url'
-        return { reply: "No problem! What's the URL of your remote server? It'll look something like `https://your-server.com:18789` or `http://192.168.1.100:18789`." }
-      }
-      return { reply: "Is it on **this PC** or a **remote server**?" }
+      // Not detected — ask if remote or alternate port
+      state.step = 'connector_url'
+      return { reply: "We couldn't detect OpenClaw on this PC. Are you running it on a **remote server** or a **different port**?\n\nPaste your gateway URL (e.g. `https://your-server.com:18789` or `http://localhost:8080`)." }
     }
 
     case 'connector_url': {
@@ -283,7 +282,7 @@ router.post('/message', authenticate, async (req: AuthRequest, res: Response) =>
       })
     }
 
-    res.json({ reply: result.reply, setupComplete: false })
+    res.json({ reply: result.reply, setupComplete: false, detect: result.detect || false })
   } catch (err: any) {
     console.error('Setup error:', err)
     res.status(500).json({ error: 'Something went wrong. Please try again.' })
