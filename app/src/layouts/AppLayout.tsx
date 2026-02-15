@@ -7,7 +7,7 @@ export default function AppLayout() {
   const { user } = useAuth()
   
   // Redirect to setup if user hasn't completed onboarding
-  if (user && user.setupComplete === false) {
+  if (user && !user.setupComplete) {
     return <Navigate to="/setup" replace />
   }
 
