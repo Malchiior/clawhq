@@ -87,9 +87,8 @@ function processMessage(userId: string, message: string): { reply: string; setup
       state.path = path
 
       if (path === 'connector') {
-        state.gatewayUrl = 'http://localhost:18789'
-        state.step = 'connector_name'
-        return { reply: "Great choice! 🔗 ClawHQ becomes your web & mobile interface for OpenClaw.\n\nWe'll connect to your local OpenClaw at `localhost:18789` (the default). What would you like to name your agent?" }
+        state.step = 'connector_location'
+        return { reply: "Great choice! 🔗 ClawHQ becomes your web & mobile interface for OpenClaw.\n\nIs OpenClaw running on **this PC** or a **remote server** (like a VPS, Mac mini, AWS, etc.)?" }
       }
       if (path === 'cloud') {
         state.step = 'cloud_name'
@@ -103,6 +102,20 @@ function processMessage(userId: string, message: string): { reply: string; setup
     }
 
     // ── Connector Path ──
+    case 'connector_location': {
+      const lower = m.toLowerCase()
+      if (lower.includes('this pc') || lower.includes('this computer') || lower.includes('local') || lower.includes('same') || lower === 'this') {
+        state.gatewayUrl = 'http://localhost:18789'
+        state.step = 'connector_name'
+        return { reply: "Perfect — we'll connect to `localhost:18789`. What would you like to name your agent?" }
+      }
+      if (lower.includes('remote') || lower.includes('server') || lower.includes('vps') || lower.includes('aws') || lower.includes('mac mini') || lower.includes('other') || lower.includes('different')) {
+        state.step = 'connector_url'
+        return { reply: "No problem! What's the URL of your remote server? It'll look something like `https://your-server.com:18789` or `http://192.168.1.100:18789`." }
+      }
+      return { reply: "Is it on **this PC** or a **remote server**?" }
+    }
+
     case 'connector_url': {
       if (!m.includes('http') && !m.includes('localhost')) {
         return { reply: "That doesn't look like a URL. Your gateway URL usually looks like `http://localhost:18789`. What is it?" }
