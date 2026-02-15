@@ -56,6 +56,7 @@ model User {
   usageRecords  UsageRecord[]
   sessions      Session[]
   tickets       SupportTicket[]
+  pageConfigs   UserPageConfig[]
 }
 
 model Session {
@@ -349,4 +350,24 @@ enum ApiProvider {
   GOOGLE
   DEEPSEEK
   GROK
+}
+
+model UserPageConfig {
+  id          String   @id @default(cuid())
+  slug        String   // URL path segment (e.g. "tasks", "notes")
+  label       String   // Display name
+  icon        String   @default("FileText") // Lucide icon name
+  templateId  String?  // Template this was created from
+  sortOrder   Int      @default(0)
+  pinned      Boolean  @default(false) // Pinned pages can't be removed (Chat, Agents)
+  archived    Boolean  @default(false)
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, slug])
+  @@index([userId, archived, sortOrder])
 }

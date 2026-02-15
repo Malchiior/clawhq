@@ -35,6 +35,7 @@ import supportRoutes from './routes/support'
 import chatRoutes from './routes/chat'
 import relayRoutes from './routes/relay'
 import setupRoutes from './routes/setup'
+import pageRoutes from './routes/pages'
 import healthMonitor from './lib/health-monitor'
 import { containerOrchestrator } from './lib/containerOrchestrator'
 import { relayManager } from './lib/relay'
@@ -98,6 +99,7 @@ app.use('/api/support', supportRoutes)
 app.use('/api/chat', chatRoutes)
 app.use('/api/relay', relayRoutes)
 app.use('/api/setup', setupRoutes)
+app.use('/api/pages', pageRoutes)
 
 // Sentry error handler — must be after all routes, before other error handlers
 if (process.env.SENTRY_DSN) {
