@@ -74,7 +74,9 @@ function getState(userId: string): SetupState {
   return setupStates.get(userId)!
 }
 
-function processMessage(userId: string, message: string): { reply: string; setupComplete?: boolean; setupData?: any; detect?: boolean; bridgeSetup?: boolean } {
+interface QuickReply { label: string; value: string }
+
+function processMessage(userId: string, message: string): { reply: string; setupComplete?: boolean; setupData?: any; detect?: boolean; bridgeSetup?: boolean; quickReplies?: QuickReply[] } {
   const state = getState(userId)
   const m = message.trim()
 
@@ -88,7 +90,7 @@ function processMessage(userId: string, message: string): { reply: string; setup
 
       if (path === 'connector') {
         state.step = 'connector_location'
-        return { reply: "Great choice! 🔗 ClawHQ becomes your web & mobile interface for OpenClaw.\n\nIs OpenClaw running on **this PC** or a **remote server**?" }
+        return { reply: "Great choice! 🔗 ClawHQ becomes your web & mobile interface for OpenClaw.\n\nIs OpenClaw running on **this PC** or a **remote server**?", quickReplies: [{ label: "🖥️ This PC", value: "this pc" }, { label: "🌐 Remote Server", value: "remote server" }] }
       }
       if (path === 'cloud') {
         state.step = 'cloud_name'
@@ -96,7 +98,7 @@ function processMessage(userId: string, message: string): { reply: string; setup
       }
       if (path === 'desktop') {
         state.step = 'desktop_os'
-        return { reply: "Nice choice! 💻 The ClawHQ desktop app runs OpenClaw right on your machine — no remote servers needed.\n\nWhat operating system are you on?\n- **Windows**\n- **Mac**\n- **Linux**" }
+        return { reply: "Nice choice! 💻 The ClawHQ desktop app runs OpenClaw right on your machine — no remote servers needed.\n\nWhat operating system are you on?", quickReplies: [{ label: "🪟 Windows", value: "windows" }, { label: "🍎 Mac", value: "mac" }, { label: "🐧 Linux", value: "linux" }] }
       }
       break
     }
@@ -113,7 +115,7 @@ function processMessage(userId: string, message: string): { reply: string; setup
         state.step = 'connector_url'
         return { reply: "No problem! Paste your remote gateway URL (e.g. `https://your-server.com:18789` or `http://192.168.1.100:18789`)." }
       }
-      return { reply: "Is it on **this PC** or a **remote server**?" }
+      return { reply: "Is it on **this PC** or a **remote server**?", quickReplies: [{ label: "🖥️ This PC", value: "this pc" }, { label: "🌐 Remote Server", value: "remote server" }] }
     }
 
     case 'connector_url': {
@@ -134,7 +136,8 @@ function processMessage(userId: string, message: string): { reply: string; setup
       state.agentName = m
       state.step = 'confirm'
       return {
-        reply: `Perfect! Here's your setup:\n\n🔗 **Mode:** Connect Existing\n🌐 **Gateway:** ${state.gatewayUrl}\n🤖 **Agent Name:** ${state.agentName}\n\nLook good? Type **yes** to finish setup!`,
+        reply: `Perfect! Here's your setup:\n\n🔗 **Mode:** Connect Existing\n🌐 **Gateway:** ${state.gatewayUrl}\n🤖 **Agent Name:** ${state.agentName}\n\nLook good?`,
+        quickReplies: [{ label: "✅ Yes, finish!", value: "yes" }, { label: "🔄 Start over", value: "no" }],
       }
     }
 
@@ -143,20 +146,22 @@ function processMessage(userId: string, message: string): { reply: string; setup
       state.agentName = m
       state.step = 'cloud_model'
       return {
-        reply: "Now pick your AI model:\n\n**1. Claude Sonnet** ⭐ (recommended) — Smart, fast, great all-rounder\n**2. Claude Haiku** — Lightning fast, super cheap\n**3. GPT-4o** — OpenAI's flagship\n**4. Gemini Flash** — Google's fastest\n\nWhich one?"
+        reply: "Now pick your AI model:",
+        quickReplies: [{ label: "⭐ Claude Sonnet", value: "claude sonnet" }, { label: "⚡ Claude Haiku", value: "claude haiku" }, { label: "🤖 GPT-4o", value: "gpt-4o" }, { label: "💎 Gemini Flash", value: "gemini flash" }]
       }
     }
 
     case 'cloud_model': {
       const model = detectModel(m)
       if (!model) {
-        return { reply: "Just pick a number (1-4) or say the model name:\n1. Claude Sonnet ⭐\n2. Claude Haiku\n3. GPT-4o\n4. Gemini Flash" }
+        return { reply: "Just pick a model:", quickReplies: [{ label: "⭐ Claude Sonnet", value: "claude sonnet" }, { label: "⚡ Claude Haiku", value: "claude haiku" }, { label: "🤖 GPT-4o", value: "gpt-4o" }, { label: "💎 Gemini Flash", value: "gemini flash" }] }
       }
       state.model = model
       state.step = 'confirm'
       const modelName = model.includes('sonnet') ? 'Claude Sonnet' : model.includes('haiku') ? 'Claude Haiku' : model.includes('gpt') ? 'GPT-4o' : model.includes('gemini') ? 'Gemini Flash' : model
       return {
-        reply: `Here's your setup:\n\n☁️ **Mode:** Cloud Hosted\n🤖 **Agent:** ${state.agentName}\n🧠 **Model:** ${modelName}\n\nLook good? Type **yes** to deploy!`
+        reply: `Here's your setup:\n\n☁️ **Mode:** Cloud Hosted\n🤖 **Agent:** ${state.agentName}\n🧠 **Model:** ${modelName}\n\nLook good?`,
+        quickReplies: [{ label: "✅ Yes, deploy!", value: "yes" }, { label: "🔄 Start over", value: "no" }]
       }
     }
 
@@ -175,7 +180,8 @@ function processMessage(userId: string, message: string): { reply: string; setup
         linux: 'https://clawhq.dev/download/linux',
       }
       return {
-        reply: `Here's your download link:\n\n📥 **[Download ClawHQ for ${osLabel}](${downloadLinks[os]})**\n\nInstall and launch the app — it'll set up OpenClaw locally in a container for you.\n\nWhile that installs, how would you like to handle API access?\n\n**1. Buy ClawHQ Credits** — All models included, one bill, no hassle\n**2. Bring Your Own Keys (BYOK)** — Use your own API keys\n\nOr type **skip** to decide later.`
+        reply: `Here's your download link:\n\n📥 **[Download ClawHQ for ${osLabel}](${downloadLinks[os]})**\n\nInstall and launch the app — it'll set up OpenClaw locally in a container for you.\n\nWhile that installs, how would you like to handle API access?`,
+        quickReplies: [{ label: "💳 Buy Credits", value: "buy credits" }, { label: "🔑 Bring My Own Keys", value: "bring my own keys" }, { label: "⏭️ Skip", value: "skip" }]
       }
     }
 
@@ -188,7 +194,7 @@ function processMessage(userId: string, message: string): { reply: string; setup
       } else if (lower === 'skip') {
         state.apiChoice = 'skip'
       } else {
-        return { reply: "Just pick:\n**1.** Buy ClawHQ Credits\n**2.** Bring Your Own Keys (BYOK)\nOr type **skip** to decide later." }
+        return { reply: "How would you like to handle API access?", quickReplies: [{ label: "💳 Buy Credits", value: "buy credits" }, { label: "🔑 Bring My Own Keys", value: "bring my own keys" }, { label: "⏭️ Skip", value: "skip" }] }
       }
       state.step = 'desktop_name'
       return { reply: "What would you like to name your agent?" }
@@ -199,7 +205,8 @@ function processMessage(userId: string, message: string): { reply: string; setup
       state.step = 'confirm'
       const apiLabel = state.apiChoice === 'credits' ? '💳 ClawHQ Credits' : state.apiChoice === 'byok' ? '🔑 Bring Your Own Keys' : '⏭️ Decide later'
       return {
-        reply: `Here's your setup:\n\n💻 **Mode:** Desktop App\n💿 **OS:** ${(state.os || 'unknown').charAt(0).toUpperCase() + (state.os || 'unknown').slice(1)}\n🔌 **API:** ${apiLabel}\n🤖 **Agent:** ${state.agentName}\n\nLook good? Type **yes** to finish!`
+        reply: `Here's your setup:\n\n💻 **Mode:** Desktop App\n💿 **OS:** ${(state.os || 'unknown').charAt(0).toUpperCase() + (state.os || 'unknown').slice(1)}\n🔌 **API:** ${apiLabel}\n🤖 **Agent:** ${state.agentName}\n\nLook good?`,
+        quickReplies: [{ label: "✅ Yes, finish!", value: "yes" }, { label: "🔄 Start over", value: "no" }]
       }
     }
 
@@ -302,7 +309,7 @@ router.post('/message', authenticate, async (req: AuthRequest, res: Response) =>
       })
     }
 
-    res.json({ reply: result.reply, setupComplete: false, detect: result.detect || false })
+    res.json({ reply: result.reply, setupComplete: false, detect: result.detect || false, quickReplies: result.quickReplies || null })
   } catch (err: any) {
     console.error('Setup error:', err)
     res.status(500).json({ error: 'Something went wrong. Please try again.' })
@@ -354,6 +361,27 @@ router.post('/reset', authenticate, async (req: AuthRequest, res: Response) => {
   } catch (err: any) {
     res.status(500).json({ error: err.message })
   }
+})
+
+// GET /api/setup/bridge-download
+router.get('/bridge-download', (req, res) => {
+  const { token, agent, os } = req.query as { token?: string; agent?: string; os?: string }
+  const t = token || 'YOUR_TOKEN'
+  const a = agent || 'YOUR_AGENT_ID'
+  const apiUrl = 'https://clawhq-api-production-f6d7.up.railway.app'
+
+  if (os === 'mac' || os === 'linux') {
+    const script = `#!/bin/bash\necho "Starting ClawHQ Bridge..."\necho "Connecting to your OpenClaw gateway..."\nnpx clawhq-bridge@latest --token=${t} --agent=${a} --url=${apiUrl}\n`
+    res.setHeader('Content-Type', 'application/octet-stream')
+    res.setHeader('Content-Disposition', 'attachment; filename="clawhq-bridge.sh"')
+    return res.send(script)
+  }
+
+  // Default: windows
+  const batch = `@echo off\r\necho Starting ClawHQ Bridge...\r\necho.\r\necho Connecting to your OpenClaw gateway...\r\necho.\r\nnpx clawhq-bridge@latest --token=${t} --agent=${a} --url=${apiUrl}\r\npause\r\n`
+  res.setHeader('Content-Type', 'application/octet-stream')
+  res.setHeader('Content-Disposition', 'attachment; filename="clawhq-bridge.bat"')
+  res.send(batch)
 })
 
 export default router

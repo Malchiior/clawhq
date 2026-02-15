@@ -4,10 +4,13 @@ import { Send, Bot, Zap, ArrowRight, RotateCcw, Sparkles, Download, Copy, Check 
 import { apiFetch } from '../lib/api'
 // Auth context refresh not needed - we use window.location for redirect
 
+interface QuickReply { label: string; value: string }
+
 interface Message {
   id: string
   role: 'user' | 'assistant'
   content: string
+  quickReplies?: QuickReply[]
 }
 
 const STORAGE_KEY = 'clawhq-setup-session'
@@ -138,7 +141,7 @@ export default function SetupPage() {
         setError(data.error)
         setMessages(prev => [...prev, { id: (Date.now()+1).toString(), role: 'assistant', content: data.error }])
       } else {
-        setMessages(prev => [...prev, { id: (Date.now()+1).toString(), role: 'assistant', content: data.reply }])
+        setMessages(prev => [...prev, { id: (Date.now()+1).toString(), role: 'assistant', content: data.reply, quickReplies: data.quickReplies || undefined }])
       }
 
       // detect flag removed — using simple question instead
@@ -252,24 +255,40 @@ export default function SetupPage() {
 
       {/* Chat area */}
       <div ref={messagesRef} className="flex-1 overflow-y-auto px-3 sm:px-4 py-4 sm:py-6 max-w-2xl mx-auto w-full">
-        {messages.map(msg => (
-          <div key={msg.id} className={`flex mb-3 sm:mb-4 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-            {msg.role === 'assistant' && (
-              <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center flex-shrink-0 mr-2 sm:mr-3 mt-1"
-                style={{ background: 'linear-gradient(135deg, #7c3aed, #a855f7)' }}>
-                <Bot size={13} className="text-white" />
+        {messages.map((msg, idx) => (
+          <div key={msg.id}>
+            <div className={`flex mb-3 sm:mb-4 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+              {msg.role === 'assistant' && (
+                <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center flex-shrink-0 mr-2 sm:mr-3 mt-1"
+                  style={{ background: 'linear-gradient(135deg, #7c3aed, #a855f7)' }}>
+                  <Bot size={13} className="text-white" />
+                </div>
+              )}
+              <div
+                className="max-w-[85%] sm:max-w-[80%] rounded-2xl px-3.5 py-2.5 sm:px-4 sm:py-3 text-sm leading-relaxed"
+                style={{
+                  background: msg.role === 'user' ? 'linear-gradient(135deg, #7c3aed, #a855f7)' : '#1a1a2e',
+                  color: msg.role === 'user' ? '#fff' : '#ccc',
+                  border: msg.role === 'assistant' ? '1px solid #2a2a4a' : 'none',
+                }}
+              >
+                {renderContent(msg.content)}
+              </div>
+            </div>
+            {/* Quick replies for this message - only show on last assistant message */}
+            {msg.role === 'assistant' && msg.quickReplies && msg.quickReplies.length > 0 && idx === messages.length - 1 && !loading && (
+              <div className="ml-9 sm:ml-11 mb-3 sm:mb-4">
+                <div className="flex flex-wrap gap-2">
+                  {msg.quickReplies.map(qr => (
+                    <button key={qr.value} onClick={() => sendMessage(qr.value)}
+                      className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all hover:scale-[1.02] active:scale-[0.98]"
+                      style={{ background: '#1a1a2e', border: '1px solid #7c3aed', color: '#a855f7' }}>
+                      {qr.label}
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
-            <div
-              className="max-w-[85%] sm:max-w-[80%] rounded-2xl px-3.5 py-2.5 sm:px-4 sm:py-3 text-sm leading-relaxed"
-              style={{
-                background: msg.role === 'user' ? 'linear-gradient(135deg, #7c3aed, #a855f7)' : '#1a1a2e',
-                color: msg.role === 'user' ? '#fff' : '#ccc',
-                border: msg.role === 'assistant' ? '1px solid #2a2a4a' : 'none',
-              }}
-            >
-              {renderContent(msg.content)}
-            </div>
           </div>
         ))}
 
@@ -313,11 +332,16 @@ export default function SetupPage() {
               <h3 className="text-white font-semibold text-base mb-4">🔗 Connect your bridge</h3>
 
               {/* Option A: Download */}
-              <a href="https://clawhq.dev/download/bridge" target="_blank" rel="noopener noreferrer"
+              <button onClick={() => {
+                const os = navigator.userAgent.includes('Mac') ? 'mac' : navigator.userAgent.includes('Linux') ? 'linux' : 'windows'
+                const apiBase = import.meta.env.VITE_API_URL || ''
+                window.location.href = `${apiBase}/api/setup/bridge-download?token=${bridgeData.bridgeToken}&agent=${bridgeData.agentId}&os=${os}`
+              }}
                 className="flex items-center justify-center gap-2 w-full px-4 py-2.5 rounded-xl text-sm font-medium mb-4 transition-all hover:scale-[1.02] active:scale-[0.98]"
                 style={{ background: 'linear-gradient(135deg, #7c3aed, #a855f7)', color: '#fff' }}>
-                <Download size={16} /> Download ClawHQ Bridge
-              </a>
+                <Download size={16} /> Download Bridge Script
+              </button>
+              <p className="text-xs text-gray-500 mb-4 text-center">Downloaded! Double-click the file to start the bridge.</p>
 
               {/* Divider */}
               <div className="flex items-center gap-3 mb-4">

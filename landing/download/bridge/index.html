@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Download ClawHQ Bridge</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0a0a1a; color: #ccc; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+    .container { max-width: 480px; padding: 40px 24px; text-align: center; }
+    h1 { color: #fff; font-size: 1.75rem; margin-bottom: 8px; }
+    .subtitle { color: #888; margin-bottom: 32px; }
+    .download-btn { display: inline-flex; align-items: center; gap: 8px; padding: 14px 32px; border-radius: 12px; background: linear-gradient(135deg, #7c3aed, #a855f7); color: #fff; font-size: 1rem; font-weight: 600; text-decoration: none; border: none; cursor: pointer; transition: transform 0.1s; }
+    .download-btn:hover { transform: scale(1.03); }
+    .download-btn:active { transform: scale(0.97); }
+    .alt { margin-top: 32px; padding: 20px; background: #1a1a2e; border: 1px solid #2a2a4a; border-radius: 12px; text-align: left; }
+    .alt h3 { color: #fff; font-size: 0.875rem; margin-bottom: 12px; }
+    .alt code { display: block; background: #0a0a1a; padding: 12px; border-radius: 8px; color: #a855f7; font-size: 0.8rem; word-break: break-all; border: 1px solid #2a2a4a; }
+    .alt p { font-size: 0.8rem; color: #666; margin-top: 8px; }
+    .os-label { color: #a855f7; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Download ClawHQ Bridge</h1>
+    <p class="subtitle">Connect your local OpenClaw to ClawHQ</p>
+    <p class="subtitle" style="margin-bottom:24px">Detected: <span class="os-label" id="os-name">...</span></p>
+
+    <button class="download-btn" id="download-btn" onclick="downloadBridge()">
+      ⬇️ Download for <span id="os-btn-label">...</span>
+    </button>
+
+    <div class="alt">
+      <h3>Or install manually with npx:</h3>
+      <code id="npx-cmd">npx clawhq-bridge@latest --token=YOUR_TOKEN --agent=YOUR_AGENT_ID --url=https://clawhq-api-production-f6d7.up.railway.app</code>
+      <p>Requires Node.js 18+</p>
+    </div>
+  </div>
+
+  <script>
+    const params = new URLSearchParams(location.search);
+    const token = params.get('token') || '';
+    const agent = params.get('agent') || '';
+    const ua = navigator.userAgent;
+    const os = ua.includes('Mac') ? 'mac' : ua.includes('Linux') ? 'linux' : 'windows';
+    const osLabels = { windows: 'Windows', mac: 'Mac', linux: 'Linux' };
+
+    document.getElementById('os-name').textContent = osLabels[os];
+    document.getElementById('os-btn-label').textContent = osLabels[os];
+
+    if (token && agent) {
+      document.getElementById('npx-cmd').textContent =
+        `npx clawhq-bridge@latest --token=${token} --agent=${agent} --url=https://clawhq-api-production-f6d7.up.railway.app`;
+    }
+
+    function downloadBridge() {
+      const base = 'https://clawhq-api-production-f6d7.up.railway.app';
+      window.location.href = `${base}/api/setup/bridge-download?token=${encodeURIComponent(token)}&agent=${encodeURIComponent(agent)}&os=${os}`;
+    }
+  </script>
+</body>
+</html>
