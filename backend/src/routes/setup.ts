@@ -248,10 +248,9 @@ router.post('/message', authenticate, async (req: AuthRequest, res: Response) =>
           name: data.agentName || 'My Agent',
           model: data.model || 'claude-sonnet-4-20250514',
           systemPrompt: data.systemPrompt || 'You are a helpful AI assistant.',
-          deployMode: data.deployMode || 'DASHBOARD',
-          status: data.deployMode === 'CLOUD' ? 'deploying' : 'stopped',
+          deployMode: data.deployMode || 'CLOUD',
+          status: data.deployMode === 'CLOUD' ? 'DEPLOYING' : 'STOPPED',
           userId,
-          config: JSON.stringify({ gatewayUrl: data.gatewayUrl || null, temperature: 0.7, maxTokens: 4096 }),
         }
       })
 
