@@ -92,6 +92,9 @@ model Agent {
   webhookToken  String?     // Token for agent webhook callbacks
   bridgeToken   String?     // Token for bridge authentication
   
+  sessionMode   String      @default("separate") // "separate" | "shared"
+  openclawSessionKey String?
+  
   systemPrompt  String?
   temperature   Float       @default(0.7)
   maxTokens     Int         @default(4096)

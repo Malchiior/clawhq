@@ -311,6 +311,7 @@ router.get('/:agentId', authenticate, async (req: AuthRequest, res: Response) =>
         systemPrompt: agent.systemPrompt,
         temperature: agent.temperature,
         maxTokens: agent.maxTokens,
+        sessionMode: agent.sessionMode || 'separate',
         skills: agent.skills || [],
         totalMessages: agent.totalMessages,
         totalTokens: agent.totalTokens,
@@ -337,8 +338,15 @@ router.patch('/:agentId', authenticate, async (req: AuthRequest, res: Response) 
     const agent = await prisma.agent.findFirst({ where: { id: agentId, userId } });
     if (!agent) return res.status(404).json({ error: 'Agent not found' });
 
-    const { name, model, systemPrompt, temperature, maxTokens, skills } = req.body;
+    const { name, model, systemPrompt, temperature, maxTokens, skills, sessionMode } = req.body;
     const data: any = {};
+
+    if (sessionMode !== undefined) {
+      if (!['separate', 'shared'].includes(sessionMode)) {
+        return res.status(400).json({ error: 'sessionMode must be "separate" or "shared"' });
+      }
+      data.sessionMode = sessionMode;
+    }
 
     if (name !== undefined) {
       if (typeof name !== 'string' || name.length < 1 || name.length > 50) {

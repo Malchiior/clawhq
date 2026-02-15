@@ -371,14 +371,22 @@ router.post('/reset', authenticate, async (req: AuthRequest, res: Response) => {
 })
 
 // GET /api/setup/bridge-download
-router.get('/bridge-download', (req, res) => {
+router.get('/bridge-download', async (req, res) => {
   const { token, agent, os } = req.query as { token?: string; agent?: string; os?: string }
   const t = token || 'YOUR_TOKEN'
   const a = agent || 'YOUR_AGENT_ID'
   const apiUrl = 'https://clawhq-api-production-f6d7.up.railway.app'
 
+  // Look up agent to get sessionMode
+  let sessionMode = 'separate'
+  try {
+    const agentRecord = await prisma.agent.findUnique({ where: { id: a } })
+    if (agentRecord?.sessionMode) sessionMode = agentRecord.sessionMode
+  } catch {}
+
   if (os === 'mac' || os === 'linux') {
-    const script = `#!/bin/bash\necho "========================================"\necho "   ClawHQ Bridge - Connecting..."\necho "========================================"\nif ! command -v node &> /dev/null; then echo "ERROR: Node.js required. Install from https://nodejs.org"; exit 1; fi\nnpm install socket.io-client@4 > /dev/null 2>&1\nnode -e "const io=require('socket.io-client');const s=io('${apiUrl}',{auth:{token:'${t}'},reconnection:true,reconnectionDelay:5000});s.on('connect',()=>{console.log('[Bridge] Connected to ClawHQ!');s.emit('bridge:register',{agentId:'${a}'})});s.on('bridge:registered',()=>console.log('[Bridge] Registered - ready'));s.on('bridge:message',async(d)=>{console.log('[Bridge] Message:',d.content);try{const r=await fetch('http://127.0.0.1:18789/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'openclaw:main',messages:[{role:'user',content:d.content}],stream:false})});if(r.ok){const j=await r.json();s.emit('bridge:response',{agentId:'${a}',messageId:d.messageId,content:j.choices[0].message.content})}else{await fetch('http://127.0.0.1:18789/hooks/wake',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:d.content,mode:'now'})});s.emit('bridge:response',{agentId:'${a}',messageId:d.messageId,content:'Sent via webhook.'})}}catch(e){s.emit('bridge:response',{agentId:'${a}',messageId:d.messageId,content:'Error: '+e.message})}});s.on('disconnect',r=>console.log('Disconnected:',r));setInterval(()=>{},30000)"\n`
+    const sk = sessionMode === 'shared' ? 'agent:main:main' : `clawhq:${a}`
+    const script = `#!/bin/bash\necho "========================================"\necho "   ClawHQ Bridge - Connecting..."\necho "   Session mode: ${sessionMode}"\necho "========================================"\nif ! command -v node &> /dev/null; then echo "ERROR: Node.js required. Install from https://nodejs.org"; exit 1; fi\nnpm install socket.io-client@4 > /dev/null 2>&1\nnode -e "const io=require('socket.io-client');const SK='${sk}';const s=io('${apiUrl}',{auth:{token:'${t}'},reconnection:true,reconnectionDelay:5000});s.on('connect',()=>{console.log('[Bridge] Connected to ClawHQ!');s.emit('bridge:register',{agentId:'${a}'})});s.on('bridge:registered',()=>console.log('[Bridge] Registered - ready'));s.on('bridge:message',async(d)=>{console.log('[Bridge] Message:',d.content);try{const r=await fetch('http://127.0.0.1:18789/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json','x-openclaw-session-key':SK},body:JSON.stringify({model:'openclaw:main',messages:[{role:'user',content:d.content}],stream:false})});if(r.ok){const j=await r.json();s.emit('bridge:response',{agentId:'${a}',messageId:d.messageId,content:j.choices[0].message.content})}else{await fetch('http://127.0.0.1:18789/hooks/wake',{method:'POST',headers:{'Content-Type':'application/json','x-openclaw-session-key':SK},body:JSON.stringify({text:d.content,mode:'now'})});s.emit('bridge:response',{agentId:'${a}',messageId:d.messageId,content:'Sent via webhook.'})}}catch(e){s.emit('bridge:response',{agentId:'${a}',messageId:d.messageId,content:'Error: '+e.message})}});s.on('disconnect',r=>console.log('Disconnected:',r));setInterval(()=>{},30000)"\n`
     res.setHeader('Content-Type', 'application/octet-stream')
     res.setHeader('Content-Disposition', 'attachment; filename="clawhq-bridge.sh"')
     return res.send(script)
@@ -389,18 +397,21 @@ router.get('/bridge-download', (req, res) => {
 const CLAWHQ='${apiUrl}';
 const TOKEN='${t}';
 const AGENT='${a}';
+const SESSION_MODE='${sessionMode}';
 let OC_TOKEN=process.env.OPENCLAW_TOKEN||process.env.OPENCLAW_GATEWAY_TOKEN||'';
 try{const p=require('path');const fs=require('fs');const cfg=JSON.parse(fs.readFileSync(p.join(require('os').homedir(),'.openclaw','openclaw.json'),'utf8'));OC_TOKEN=OC_TOKEN||cfg.gateway?.auth?.token||'';if(OC_TOKEN)console.log('[Bridge] Auto-detected OpenClaw gateway token from config')}catch(e){}
+const SESSION_KEY=SESSION_MODE==='shared'?'agent:main:main':'clawhq:'+AGENT;
+console.log('[Bridge] Session mode:',SESSION_MODE,'| Session key:',SESSION_KEY);
 const s=io(CLAWHQ,{auth:{token:TOKEN},reconnection:true,reconnectionDelay:5000});
 s.on('connect',()=>{console.log('[Bridge] Connected to ClawHQ!');s.emit('bridge:register',{agentId:AGENT})});
 s.on('bridge:registered',()=>{console.log('[Bridge] Registered - ready to relay messages');console.log('');console.log('========================================');console.log('  DO NOT CLOSE THIS WINDOW!');console.log('  The bridge must stay running to');console.log('  relay messages to your agent.');console.log('========================================');console.log('')});
 s.on('bridge:message',async(d)=>{
   console.log('[Bridge] Message:',d.content);
   try{
-    const hdrs={'Content-Type':'application/json'};if(OC_TOKEN)hdrs['Authorization']='Bearer '+OC_TOKEN;
+    const hdrs={'Content-Type':'application/json','x-openclaw-session-key':SESSION_KEY};if(OC_TOKEN)hdrs['Authorization']='Bearer '+OC_TOKEN;
     const r=await fetch('http://127.0.0.1:18789/v1/chat/completions',{method:'POST',headers:hdrs,body:JSON.stringify({model:'openclaw:main',messages:[{role:'user',content:d.content}],stream:false})});
     if(r.ok){const j=await r.json();s.emit('bridge:response',{agentId:AGENT,messageId:d.messageId,content:j.choices[0].message.content})}
-    else{const wh={'Content-Type':'application/json'};if(OC_TOKEN)wh['Authorization']='Bearer '+OC_TOKEN;await fetch('http://127.0.0.1:18789/hooks/wake',{method:'POST',headers:wh,body:JSON.stringify({text:d.content,mode:'now'})});s.emit('bridge:response',{agentId:AGENT,messageId:d.messageId,content:'Sent via webhook.'})}
+    else{const wh={'Content-Type':'application/json','x-openclaw-session-key':SESSION_KEY};if(OC_TOKEN)wh['Authorization']='Bearer '+OC_TOKEN;await fetch('http://127.0.0.1:18789/hooks/wake',{method:'POST',headers:wh,body:JSON.stringify({text:d.content,mode:'now'})});s.emit('bridge:response',{agentId:AGENT,messageId:d.messageId,content:'Sent via webhook.'})}
   }catch(e){console.error('[Bridge] Error:',e.message);s.emit('bridge:response',{agentId:AGENT,messageId:d.messageId,content:'Error: '+e.message})}
 });
 s.on('disconnect',r=>console.log('[Bridge] Disconnected:',r));

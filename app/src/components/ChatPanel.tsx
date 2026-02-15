@@ -32,13 +32,14 @@ interface ChatPanelProps {
   agentStatus: string
   agentModel: string
   deployMode?: string
+  sessionMode?: string
 }
 
 export interface ChatPanelHandle {
   insertPrompt: (text: string) => void
 }
 
-const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function ChatPanel({ agentId, agentName, agentStatus, agentModel, deployMode }, ref) {
+const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function ChatPanel({ agentId, agentName, agentStatus, agentModel, deployMode, sessionMode }, ref) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
@@ -432,6 +433,11 @@ const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function ChatPanel
             <div className="flex items-center gap-1.5">
               <div className={`w-1.5 h-1.5 rounded-full ${agentStatus === 'RUNNING' ? 'bg-success animate-pulse' : 'bg-text-muted'}`} />
               <span className="text-[11px] text-text-muted">{agentModel}</span>
+              {sessionMode && (
+                <span className="text-[10px] text-text-muted ml-1">
+                  {sessionMode === 'shared' ? '🔗 Shared' : '🔀 Separate'}
+                </span>
+              )}
             </div>
           </div>
         </div>

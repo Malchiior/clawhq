@@ -35,6 +35,7 @@ interface Agent {
   systemPrompt: string | null
   temperature: number
   maxTokens: number
+  sessionMode?: string
   skills: string[]
   totalMessages: number
   totalTokens: number
@@ -352,6 +353,7 @@ export default function AgentDetailPage() {
               agentName={agent.name}
               agentStatus={agent.status}
               agentModel={agent.model}
+              sessionMode={agent.sessionMode}
             />
           )}
 
@@ -426,6 +428,39 @@ export default function AgentDetailPage() {
                   )}
                 </div>
               </div>
+
+              {/* Session Mode (CONNECTOR only) */}
+              {agent.deployMode === 'CONNECTOR' && (
+                <div className="mt-6 pt-6 border-t border-border">
+                  <h3 className="text-sm font-semibold text-text mb-1">Session Mode</h3>
+                  <p className="text-xs text-text-muted mb-3">Choose how ClawHQ connects to your OpenClaw sessions</p>
+                  <div className="flex gap-3">
+                    <button
+                      onClick={async () => {
+                        await apiFetch(`/api/agents/${agent.id}`, { method: 'PATCH', body: JSON.stringify({ sessionMode: 'separate' }) })
+                        fetchAgent()
+                      }}
+                      className={`flex-1 p-3 rounded-lg border text-left ${agent.sessionMode === 'separate' || !agent.sessionMode ? 'border-primary bg-primary/10' : 'border-border hover:border-border-light'}`}
+                    >
+                      <div className="text-sm font-medium text-text">🔀 Separate Session</div>
+                      <div className="text-xs text-text-muted mt-1">Own conversation thread with its own context</div>
+                    </button>
+                    <button
+                      onClick={async () => {
+                        await apiFetch(`/api/agents/${agent.id}`, { method: 'PATCH', body: JSON.stringify({ sessionMode: 'shared' }) })
+                        fetchAgent()
+                      }}
+                      className={`flex-1 p-3 rounded-lg border text-left ${agent.sessionMode === 'shared' ? 'border-primary bg-primary/10' : 'border-border hover:border-border-light'}`}
+                    >
+                      <div className="text-sm font-medium text-text">🔗 Shared Session</div>
+                      <div className="text-xs text-text-muted mt-1">Same session as your main OpenClaw agent</div>
+                    </button>
+                  </div>
+                  {agent.sessionMode === 'shared' && (
+                    <p className="text-xs text-accent mt-2">⚠️ Shared mode: messages appear in your main OpenClaw session. Re-download the bridge after changing this setting.</p>
+                  )}
+                </div>
+              )}
 
               {/* Generated Config Preview */}
               <div className="mt-6 pt-6 border-t border-border">
