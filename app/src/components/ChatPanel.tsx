@@ -65,6 +65,7 @@ const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function ChatPanel
   const fileInputRef = useRef<HTMLInputElement>(null)
   const generalFileInputRef = useRef<HTMLInputElement>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const messagesRef2 = useRef<ChatMessage[]>([])
 
   useImperativeHandle(ref, () => ({
     insertPrompt: (text: string) => {
@@ -96,6 +97,9 @@ const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function ChatPanel
   const scrollToBottom = useCallback((smooth = true) => {
     messagesEndRef.current?.scrollIntoView({ behavior: smooth ? 'smooth' : 'instant' })
   }, [])
+
+  // Keep messages ref in sync
+  useEffect(() => { messagesRef2.current = messages }, [messages])
 
   // Load chat history
   useEffect(() => {
@@ -138,7 +142,7 @@ const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function ChatPanel
     pollRef.current = setInterval(async () => {
       if (socket.connected) return // Skip polling when socket is live
       try {
-        const lastMsg = messages[messages.length - 1]
+        const lastMsg = messagesRef2.current[messagesRef2.current.length - 1]
         if (!lastMsg) return
         const data = await apiFetch(`/api/chat/${agentId}/poll?since=${lastMsg.createdAt}`)
         if (data.messages?.length > 0) {
@@ -160,7 +164,8 @@ const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function ChatPanel
       socket.emit('leave:agent', agentId)
       if (pollRef.current) clearInterval(pollRef.current)
     }
-  }, [agentId, messages.length, scrollToBottom])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agentId, scrollToBottom]) // Removed messages.length — was causing re-subscription and duplicate handlers
 
   // Scroll detection for "scroll to bottom" button
   useEffect(() => {
@@ -274,9 +279,9 @@ const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function ChatPanel
         body: JSON.stringify(body),
       })
 
-      // Replace temp message with real ones
+      // Replace temp message with real ones (dedup against socket-delivered messages)
       setMessages(prev => {
-        const filtered = prev.filter(m => m.id !== tempUserMsg.id)
+        const filtered = prev.filter(m => m.id !== tempUserMsg.id && m.id !== data.userMessage.id && m.id !== data.assistantMessage.id)
         return [...filtered, data.userMessage, data.assistantMessage]
       })
       scrollToBottom()
