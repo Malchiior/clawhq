@@ -52,7 +52,6 @@ export default function SetupPage() {
   useEffect(() => {
     if (messages.length > 0) return // Resume existing session
     apiFetch('/api/setup/status')
-      .then((r: Response) => r.json())
       .then((data: any) => {
         if (!data.setupRequired) { navigate('/dashboard'); return }
         if (data.initialMessage) {
@@ -92,12 +91,11 @@ export default function SetupPage() {
 
     try {
       const history = messages.map(m => ({ role: m.role, content: m.content }))
-      const res = await apiFetch('/api/setup/message', {
+      const data = await apiFetch('/api/setup/message', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: msg, history })
       })
-      const data = await res.json()
 
       if (data.error && data.redirect) {
         // Rate limited — redirect to manual
