@@ -448,7 +448,30 @@ export default function SetupPage() {
                       <><Download size={16} /> Install OpenClaw Now</>
                     )}
                   </button>
-                  <p className="text-xs text-gray-500 text-center">This runs <code>npm install -g openclaw</code> on your PC</p>
+                  <p className="text-xs text-gray-500 text-center mb-4">This runs <code>npm install -g openclaw</code> on your PC</p>
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="flex-1 h-px" style={{ background: '#2a2a4a' }} />
+                    <span className="text-xs text-gray-500">or</span>
+                    <div className="flex-1 h-px" style={{ background: '#2a2a4a' }} />
+                  </div>
+                  <button
+                    onClick={() => {
+                      // Reset setup to start over with remote server option
+                      clearSession()
+                      setBridgeData(null)
+                      setBridgeConnected(false)
+                      setBridgeHealth(null)
+                      setSetupComplete(false)
+                      setProgress(10)
+                      setMessages([
+                        { id: 'restart', role: 'assistant', content: "No worries! Let's set up with a **remote server** instead.\n\nPaste your remote gateway URL (e.g. `https://your-server.com:18789`):" }
+                      ])
+                      setShowQuickReplies(false)
+                    }}
+                    className="flex items-center justify-center gap-2 w-full px-4 py-2 rounded-xl text-sm font-medium transition-all hover:scale-[1.02] active:scale-[0.98]"
+                    style={{ background: 'transparent', color: '#9ca3af', border: '1px solid #2a2a4a' }}>
+                    🌐 Set Up on a Remote Server Instead
+                  </button>
                 </>
               ) : (
                 <>

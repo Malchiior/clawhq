@@ -1026,6 +1026,11 @@ function BridgeBanner({ connected, agentId }: { connected: boolean | null; agent
       <div className="flex items-center gap-2 px-4 py-1.5 text-xs border-b border-border bg-success/5 text-success">
         <div className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
         🔗 Connected via bridge {health.clawVersion ? `· OpenClaw ${health.clawVersion}` : ''}
+        <button onClick={() => sendCommand('restart-gateway')} disabled={actionLoading}
+          className="ml-auto text-[10px] text-text-muted hover:text-warning transition-colors disabled:opacity-50"
+          title="Restart OpenClaw gateway">
+          {actionLoading ? '🔄 Restarting...' : '🔄 Restart'}
+        </button>
       </div>
     )
   }
