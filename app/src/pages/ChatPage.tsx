@@ -11,6 +11,7 @@ interface AgentBasic {
   name: string
   model: string
   status: string
+  deployMode?: string
 }
 
 export default function ChatPage() {
@@ -125,6 +126,7 @@ export default function ChatPage() {
               agentName={agent.name}
               agentStatus={agent.status}
               agentModel={agent.model}
+              deployMode={agent.deployMode}
             />
           </div>
         </div>

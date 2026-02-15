@@ -215,6 +215,45 @@ router.post('/:agentId/upload-files', authenticate, fileUpload.array('files', 10
   }
 })
 
+// POST /api/chat/:agentId/save - Save a message without AI generation (for CONNECTOR mode)
+router.post('/:agentId/save', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const agentId = req.params.agentId as string
+    const userId = req.userId!
+    const { role, content, metadata } = req.body
+
+    if (!role || !['user', 'assistant'].includes(role)) {
+      res.status(400).json({ error: 'Valid role (user/assistant) required' })
+      return
+    }
+
+    const agent = await prisma.agent.findFirst({ where: { id: agentId, userId } })
+    if (!agent) { res.status(404).json({ error: 'Agent not found' }); return }
+
+    const message = await prisma.chatMessage.create({
+      data: {
+        role,
+        content: content || '',
+        metadata: metadata || undefined,
+        agentId,
+        userId,
+      },
+    })
+
+    emitChatMessage(agentId, message)
+
+    await prisma.agent.update({
+      where: { id: agentId },
+      data: { totalMessages: { increment: 1 }, lastActiveAt: new Date() },
+    })
+
+    res.json({ message })
+  } catch (error) {
+    console.error('Chat save error:', error)
+    res.status(500).json({ error: 'Failed to save message' })
+  }
+})
+
 // POST /api/chat/:agentId/messages - Send a message to agent
 router.post('/:agentId/messages', authenticate, async (req: AuthRequest, res: Response) => {
   try {

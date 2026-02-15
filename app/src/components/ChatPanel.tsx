@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Send, Loader2, Trash2, Bot, User, AlertCircle, ChevronDown, Sparkles, MessageSquare, ImagePlus, Paperclip, X, ZoomIn, FileText, FileCode, FileSpreadsheet, File, Download, Eye, Search, ChevronUp } from 'lucide-react'
 import { apiFetch, apiUpload } from '../lib/api'
 import { getSocket } from '../lib/socket'
+import { GatewayClient, GatewayError } from '../lib/gateway-client'
 import MessageContent from './MessageContent'
 
 interface Attachment {
@@ -30,18 +31,23 @@ interface ChatPanelProps {
   agentName: string
   agentStatus: string
   agentModel: string
+  deployMode?: string
 }
 
 export interface ChatPanelHandle {
   insertPrompt: (text: string) => void
 }
 
-const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function ChatPanel({ agentId, agentName, agentStatus, agentModel }, ref) {
+const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function ChatPanel({ agentId, agentName, agentStatus, agentModel, deployMode }, ref) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [gatewayConnected, setGatewayConnected] = useState<boolean | null>(null)
+  const gatewayClientRef = useRef<GatewayClient | null>(null)
+
+  const isConnectorMode = deployMode === 'CONNECTOR'
   const [showScrollBtn, setShowScrollBtn] = useState(false)
   const [clearConfirm, setClearConfirm] = useState(false)
   const [pendingImages, setPendingImages] = useState<Attachment[]>([])
@@ -67,6 +73,27 @@ const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function ChatPanel
       setTimeout(() => inputRef.current?.focus(), 50)
     }
   }), [])
+
+  // Initialize gateway client for CONNECTOR mode
+  useEffect(() => {
+    if (!isConnectorMode) {
+      gatewayClientRef.current = null
+      setGatewayConnected(null)
+      return
+    }
+
+    const client = new GatewayClient()
+    gatewayClientRef.current = client
+
+    // Check health immediately and periodically
+    const checkHealth = async () => {
+      const healthy = await client.checkHealth()
+      setGatewayConnected(healthy)
+    }
+    checkHealth()
+    const interval = setInterval(checkHealth, 30000)
+    return () => clearInterval(interval)
+  }, [isConnectorMode])
 
   const scrollToBottom = useCallback((smooth = true) => {
     messagesEndRef.current?.scrollIntoView({ behavior: smooth ? 'smooth' : 'instant' })
@@ -239,23 +266,85 @@ const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function ChatPanel
     scrollToBottom()
 
     try {
-      const body: any = {}
-      if (text) body.content = text
-      if (hasAttachments) body.attachments = allAttachments
+      if (isConnectorMode && gatewayClientRef.current) {
+        // CONNECTOR mode: send directly to user's local OpenClaw gateway
+        const client = gatewayClientRef.current
 
-      const data = await apiFetch(`/api/chat/${agentId}/messages`, {
-        method: 'POST',
-        body: JSON.stringify(body),
-      })
+        // Save user message to ClawHQ backend for persistence
+        let savedUserMsg: ChatMessage | null = null
+        try {
+          const saveData = await apiFetch(`/api/chat/${agentId}/save`, {
+            method: 'POST',
+            body: JSON.stringify({
+              role: 'user',
+              content: text || '',
+              metadata: hasAttachments ? { attachments: allAttachments } : undefined,
+            }),
+          })
+          savedUserMsg = saveData.message
+        } catch {
+          // Non-fatal — we still send to gateway
+        }
 
-      // Replace temp message with real ones
-      setMessages(prev => {
-        const filtered = prev.filter(m => m.id !== tempUserMsg.id)
-        return [...filtered, data.userMessage, data.assistantMessage]
-      })
-      scrollToBottom()
+        // Send to local gateway
+        const gatewayMessages = messages
+          .slice(-20)
+          .map(m => ({ role: m.role as 'user' | 'assistant', content: m.content }))
+        gatewayMessages.push({ role: 'user' as const, content: text || 'See attached files' })
+
+        const response = await client.sendChat(gatewayMessages)
+
+        // Save assistant response to backend for persistence
+        let assistantMsg: ChatMessage = {
+          id: `gw-${Date.now()}`,
+          role: 'assistant',
+          content: response.content,
+          createdAt: new Date().toISOString(),
+        }
+        try {
+          const saveData = await apiFetch(`/api/chat/${agentId}/save`, {
+            method: 'POST',
+            body: JSON.stringify({
+              role: 'assistant',
+              content: response.content,
+              metadata: { model: response.model, gateway: true },
+            }),
+          })
+          assistantMsg = saveData.message
+        } catch {
+          // Non-fatal
+        }
+
+        // Replace temp with real messages
+        setMessages(prev => {
+          const filtered = prev.filter(m => m.id !== tempUserMsg.id)
+          const userMsg = savedUserMsg || { ...tempUserMsg, id: `local-${Date.now()}` }
+          return [...filtered, userMsg, assistantMsg]
+        })
+        scrollToBottom()
+      } else {
+        // Standard mode: send to ClawHQ backend
+        const body: any = {}
+        if (text) body.content = text
+        if (hasAttachments) body.attachments = allAttachments
+
+        const data = await apiFetch(`/api/chat/${agentId}/messages`, {
+          method: 'POST',
+          body: JSON.stringify(body),
+        })
+
+        // Replace temp message with real ones
+        setMessages(prev => {
+          const filtered = prev.filter(m => m.id !== tempUserMsg.id)
+          return [...filtered, data.userMessage, data.assistantMessage]
+        })
+        scrollToBottom()
+      }
     } catch (err: any) {
-      setError(err.message || 'Failed to send message')
+      const errorMsg = err instanceof GatewayError
+        ? `Gateway: ${err.message}`
+        : (err.message || 'Failed to send message')
+      setError(errorMsg)
       setMessages(prev => prev.filter(m => m.id !== tempUserMsg.id))
       setPendingImages(currentImages)
       setPendingFiles(currentFiles)
@@ -430,6 +519,24 @@ const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function ChatPanel
           )}
         </div>
       </div>
+
+      {/* Gateway connection banner for CONNECTOR mode */}
+      {isConnectorMode && (
+        <div className={`flex items-center gap-2 px-4 py-1.5 text-xs border-b border-border ${
+          gatewayConnected === true
+            ? 'bg-success/5 text-success'
+            : gatewayConnected === false
+            ? 'bg-error/5 text-error'
+            : 'bg-navy/30 text-text-muted'
+        }`}>
+          <div className={`w-1.5 h-1.5 rounded-full ${
+            gatewayConnected === true ? 'bg-success animate-pulse' : gatewayConnected === false ? 'bg-error' : 'bg-text-muted'
+          }`} />
+          {gatewayConnected === true && '🔗 Connected to local OpenClaw'}
+          {gatewayConnected === false && '🔴 Can\'t reach OpenClaw at localhost:18789 — is it running?'}
+          {gatewayConnected === null && '⏳ Checking local OpenClaw...'}
+        </div>
+      )}
 
       {/* Search bar */}
       <AnimatePresence>
