@@ -90,6 +90,7 @@ model Agent {
   usesBundledApi Boolean    @default(false)
   channels      String[]    @default([]) // Array of channel types
   webhookToken  String?     // Token for agent webhook callbacks
+  bridgeToken   String?     // Token for bridge authentication
   
   systemPrompt  String?
   temperature   Float       @default(0.7)

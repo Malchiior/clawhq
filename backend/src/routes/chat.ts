@@ -3,7 +3,7 @@ import prisma from '../lib/prisma'
 import { authenticate, AuthRequest } from '../middleware/auth'
 import { relayManager } from '../lib/relay'
 import { proxyChatForUser } from '../lib/ai-proxy'
-import { emitChatMessage } from '../lib/socket'
+import { emitChatMessage, isBridgeConnected, sendBridgeMessage } from '../lib/socket'
 import multer from 'multer'
 
 const router = Router()
@@ -365,8 +365,35 @@ router.delete('/:agentId/messages', authenticate, async (req: AuthRequest, res: 
   }
 })
 
+// GET /api/chat/:agentId/bridge-status - Check if bridge is connected
+router.get('/:agentId/bridge-status', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const agentId = req.params.agentId as string
+    const userId = req.userId!
+
+    const agent = await prisma.agent.findFirst({ where: { id: agentId, userId } })
+    if (!agent) { res.status(404).json({ error: 'Agent not found' }); return }
+
+    res.json({ connected: isBridgeConnected(agentId) })
+  } catch (error) {
+    console.error('Bridge status error:', error)
+    res.status(500).json({ error: 'Failed to check bridge status' })
+  }
+})
+
 // Helper: Generate agent response
 async function generateAgentResponse(agent: any, userMessage: string, attachments?: any[]): Promise<string> {
+  // 0. Try bridge (Socket.io bridge for CONNECTOR agents)
+  if (isBridgeConnected(agent.id)) {
+    try {
+      const messageId = `msg_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`
+      return await sendBridgeMessage(agent.id, messageId, userMessage, attachments)
+    } catch (err: any) {
+      console.error(`Bridge chat error for agent ${agent.id}:`, err.message)
+      // Fall through to other methods
+    }
+  }
+
   // 1. Try relay tunnel (local OpenClaw connected via WebSocket)
   if (relayManager.isConnected(agent.id)) {
     try {

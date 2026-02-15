@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Send, Loader2, Trash2, Bot, User, AlertCircle, ChevronDown, Sparkles, MessageSquare, ImagePlus, Paperclip, X, ZoomIn, FileText, FileCode, FileSpreadsheet, File, Download, Eye, Search, ChevronUp } from 'lucide-react'
 import { apiFetch, apiUpload } from '../lib/api'
 import { getSocket } from '../lib/socket'
-import { GatewayClient, GatewayError } from '../lib/gateway-client'
+// GatewayClient removed — CONNECTOR mode now uses bridge via backend
 import MessageContent from './MessageContent'
 
 interface Attachment {
@@ -44,8 +44,7 @@ const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function ChatPanel
   const [sending, setSending] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [gatewayConnected, setGatewayConnected] = useState<boolean | null>(null)
-  const gatewayClientRef = useRef<GatewayClient | null>(null)
+  const [bridgeConnected, setBridgeConnected] = useState<boolean | null>(null)
 
   const isConnectorMode = deployMode === 'CONNECTOR'
   const [showScrollBtn, setShowScrollBtn] = useState(false)
@@ -74,26 +73,25 @@ const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function ChatPanel
     }
   }), [])
 
-  // Initialize gateway client for CONNECTOR mode
+  // Check bridge status for CONNECTOR mode
   useEffect(() => {
     if (!isConnectorMode) {
-      gatewayClientRef.current = null
-      setGatewayConnected(null)
+      setBridgeConnected(null)
       return
     }
 
-    const client = new GatewayClient()
-    gatewayClientRef.current = client
-
-    // Check health immediately and periodically
-    const checkHealth = async () => {
-      const healthy = await client.checkHealth()
-      setGatewayConnected(healthy)
+    const checkBridge = async () => {
+      try {
+        const data = await apiFetch(`/api/chat/${agentId}/bridge-status`)
+        setBridgeConnected(data.connected)
+      } catch {
+        setBridgeConnected(false)
+      }
     }
-    checkHealth()
-    const interval = setInterval(checkHealth, 30000)
+    checkBridge()
+    const interval = setInterval(checkBridge, 15000)
     return () => clearInterval(interval)
-  }, [isConnectorMode])
+  }, [isConnectorMode, agentId])
 
   const scrollToBottom = useCallback((smooth = true) => {
     messagesEndRef.current?.scrollIntoView({ behavior: smooth ? 'smooth' : 'instant' })
@@ -266,84 +264,24 @@ const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function ChatPanel
     scrollToBottom()
 
     try {
-      if (isConnectorMode && gatewayClientRef.current) {
-        // CONNECTOR mode: send directly to user's local OpenClaw gateway
-        const client = gatewayClientRef.current
+      // All modes (including CONNECTOR) now go through the backend
+      const body: any = {}
+      if (text) body.content = text
+      if (hasAttachments) body.attachments = allAttachments
 
-        // Save user message to ClawHQ backend for persistence
-        let savedUserMsg: ChatMessage | null = null
-        try {
-          const saveData = await apiFetch(`/api/chat/${agentId}/save`, {
-            method: 'POST',
-            body: JSON.stringify({
-              role: 'user',
-              content: text || '',
-              metadata: hasAttachments ? { attachments: allAttachments } : undefined,
-            }),
-          })
-          savedUserMsg = saveData.message
-        } catch {
-          // Non-fatal — we still send to gateway
-        }
+      const data = await apiFetch(`/api/chat/${agentId}/messages`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      })
 
-        // Send to local gateway
-        const gatewayMessages = messages
-          .slice(-20)
-          .map(m => ({ role: m.role as 'user' | 'assistant', content: m.content }))
-        gatewayMessages.push({ role: 'user' as const, content: text || 'See attached files' })
-
-        const response = await client.sendChat(gatewayMessages)
-
-        // Save assistant response to backend for persistence
-        let assistantMsg: ChatMessage = {
-          id: `gw-${Date.now()}`,
-          role: 'assistant',
-          content: response.content,
-          createdAt: new Date().toISOString(),
-        }
-        try {
-          const saveData = await apiFetch(`/api/chat/${agentId}/save`, {
-            method: 'POST',
-            body: JSON.stringify({
-              role: 'assistant',
-              content: response.content,
-              metadata: { model: response.model, gateway: true },
-            }),
-          })
-          assistantMsg = saveData.message
-        } catch {
-          // Non-fatal
-        }
-
-        // Replace temp with real messages
-        setMessages(prev => {
-          const filtered = prev.filter(m => m.id !== tempUserMsg.id)
-          const userMsg = savedUserMsg || { ...tempUserMsg, id: `local-${Date.now()}` }
-          return [...filtered, userMsg, assistantMsg]
-        })
-        scrollToBottom()
-      } else {
-        // Standard mode: send to ClawHQ backend
-        const body: any = {}
-        if (text) body.content = text
-        if (hasAttachments) body.attachments = allAttachments
-
-        const data = await apiFetch(`/api/chat/${agentId}/messages`, {
-          method: 'POST',
-          body: JSON.stringify(body),
-        })
-
-        // Replace temp message with real ones
-        setMessages(prev => {
-          const filtered = prev.filter(m => m.id !== tempUserMsg.id)
-          return [...filtered, data.userMessage, data.assistantMessage]
-        })
-        scrollToBottom()
-      }
+      // Replace temp message with real ones
+      setMessages(prev => {
+        const filtered = prev.filter(m => m.id !== tempUserMsg.id)
+        return [...filtered, data.userMessage, data.assistantMessage]
+      })
+      scrollToBottom()
     } catch (err: any) {
-      const errorMsg = err instanceof GatewayError
-        ? `Gateway: ${err.message}`
-        : (err.message || 'Failed to send message')
+      const errorMsg = err.message || 'Failed to send message'
       setError(errorMsg)
       setMessages(prev => prev.filter(m => m.id !== tempUserMsg.id))
       setPendingImages(currentImages)
@@ -520,22 +458,9 @@ const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function ChatPanel
         </div>
       </div>
 
-      {/* Gateway connection banner for CONNECTOR mode */}
+      {/* Bridge connection banner for CONNECTOR mode */}
       {isConnectorMode && (
-        <div className={`flex items-center gap-2 px-4 py-1.5 text-xs border-b border-border ${
-          gatewayConnected === true
-            ? 'bg-success/5 text-success'
-            : gatewayConnected === false
-            ? 'bg-error/5 text-error'
-            : 'bg-navy/30 text-text-muted'
-        }`}>
-          <div className={`w-1.5 h-1.5 rounded-full ${
-            gatewayConnected === true ? 'bg-success animate-pulse' : gatewayConnected === false ? 'bg-error' : 'bg-text-muted'
-          }`} />
-          {gatewayConnected === true && '🔗 Connected to local OpenClaw'}
-          {gatewayConnected === false && '🔴 Can\'t reach OpenClaw at localhost:18789 — is it running?'}
-          {gatewayConnected === null && '⏳ Checking local OpenClaw...'}
-        </div>
+        <BridgeBanner connected={bridgeConnected} agentId={agentId} />
       )}
 
       {/* Search bar */}
@@ -1056,6 +981,52 @@ function getFileTypeLabel(mimeType: string): string {
     'video/webm': 'WebM',
   }
   return map[mimeType] || mimeType.split('/')[1]?.toUpperCase() || 'File'
+}
+
+function BridgeBanner({ connected, agentId }: { connected: boolean | null; agentId: string }) {
+  const [expanded, setExpanded] = useState(false)
+
+  if (connected === true) {
+    return (
+      <div className="flex items-center gap-2 px-4 py-1.5 text-xs border-b border-border bg-success/5 text-success">
+        <div className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
+        🔗 Connected via bridge
+      </div>
+    )
+  }
+
+  return (
+    <div className="border-b border-border">
+      <div className="flex items-center gap-2 px-4 py-1.5 text-xs bg-warning/5 text-warning">
+        <div className={`w-1.5 h-1.5 rounded-full ${connected === false ? 'bg-warning' : 'bg-text-muted'}`} />
+        {connected === false
+          ? '🔌 Bridge not connected. Run the ClawHQ Bridge on your PC to connect.'
+          : '⏳ Checking bridge status...'}
+        {connected === false && (
+          <button
+            onClick={() => setExpanded(!expanded)}
+            className="ml-auto text-[10px] underline hover:no-underline"
+          >
+            {expanded ? 'Hide' : 'Setup Instructions'}
+          </button>
+        )}
+      </div>
+      {expanded && (
+        <div className="px-4 py-2.5 text-[11px] text-text-muted bg-navy/20 font-mono leading-relaxed space-y-1">
+          <p className="text-text-secondary font-sans font-medium mb-1.5">Run the ClawHQ Bridge:</p>
+          <p>1. <code className="bg-navy/40 px-1 rounded">cd clawhq/bridge</code></p>
+          <p>2. <code className="bg-navy/40 px-1 rounded">npm install</code></p>
+          <p>3. Set environment variables:</p>
+          <div className="pl-4 space-y-0.5">
+            <p><code className="bg-navy/40 px-1 rounded">CLAWHQ_URL=https://clawhq-api-production-f6d7.up.railway.app</code></p>
+            <p><code className="bg-navy/40 px-1 rounded">BRIDGE_TOKEN=&lt;your-jwt-token&gt;</code></p>
+            <p><code className="bg-navy/40 px-1 rounded">AGENT_ID={agentId}</code></p>
+          </div>
+          <p>4. <code className="bg-navy/40 px-1 rounded">npm start</code></p>
+        </div>
+      )}
+    </div>
+  )
 }
 
 function FileTypeIcon({ type, className }: { type: string; className?: string }) {
