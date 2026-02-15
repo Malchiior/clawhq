@@ -1,8 +1,16 @@
-import { Outlet } from 'react-router-dom'
+import { Outlet, Navigate } from 'react-router-dom'
+import { useAuth } from '../context/AuthContext'
 import Sidebar from '../components/Sidebar'
 import FloatingChat from '../components/FloatingChat'
 
 export default function AppLayout() {
+  const { user } = useAuth()
+  
+  // Redirect to setup if user hasn't completed onboarding
+  if (user && user.setupComplete === false) {
+    return <Navigate to="/setup" replace />
+  }
+
   return (
     <div className="flex min-h-screen" style={{ background: 'var(--bg)' }}>
       <Sidebar />
