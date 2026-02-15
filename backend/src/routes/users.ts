@@ -1,10 +1,15 @@
-import { Router, Response } from 'express'
+﻿import { Router, Response } from 'express'
 import crypto from 'crypto'
 import prisma from '../lib/prisma'
 import { authenticate, AuthRequest } from '../middleware/auth'
 
 const router = Router()
 router.use(authenticate)
+
+function sanitizeUser(user: any) {
+  const { passwordHash, emailVerificationToken, emailVerificationExpires, passwordResetToken, passwordResetExpires, ...safe } = user
+  return safe
+}
 
 function paramId(req: AuthRequest): string { return req.params.id as string }
 
@@ -25,7 +30,7 @@ router.post('/onboard', async (req: AuthRequest, res: Response) => {
         },
       })
     }
-    res.json({ user })
+    res.json({ user: sanitizeUser(user) })
   } catch {
     res.status(500).json({ error: 'Internal server error' })
   }
@@ -35,7 +40,7 @@ router.get('/me', async (req: AuthRequest, res: Response) => {
   try {
     const user = await prisma.user.findUnique({ where: { id: req.userId } })
     if (!user) { res.status(404).json({ error: 'User not found' }); return }
-    res.json({ user })
+    res.json({ user: sanitizeUser(user) })
   } catch {
     res.status(500).json({ error: 'Internal server error' })
   }
@@ -45,7 +50,7 @@ router.get('/profile', async (req: AuthRequest, res: Response) => {
   try {
     const user = await prisma.user.findUnique({ where: { id: req.userId } })
     if (!user) { res.status(404).json({ error: 'User not found' }); return }
-    res.json({ user })
+    res.json({ user: sanitizeUser(user) })
   } catch {
     res.status(500).json({ error: 'Internal server error' })
   }
@@ -64,7 +69,7 @@ router.patch('/profile', async (req: AuthRequest, res: Response) => {
       where: { id: req.userId },
       data,
     })
-    res.json({ user })
+    res.json({ user: sanitizeUser(user) })
   } catch {
     res.status(500).json({ error: 'Internal server error' })
   }
@@ -89,7 +94,7 @@ router.post('/profile/logo', async (req: AuthRequest, res: Response) => {
       where: { id: req.userId },
       data: { logoUrl: logo },
     })
-    res.json({ user })
+    res.json({ user: sanitizeUser(user) })
   } catch {
     res.status(500).json({ error: 'Internal server error' })
   }
@@ -101,7 +106,7 @@ router.delete('/profile/logo', async (req: AuthRequest, res: Response) => {
       where: { id: req.userId },
       data: { logoUrl: null },
     })
-    res.json({ user })
+    res.json({ user: sanitizeUser(user) })
   } catch {
     res.status(500).json({ error: 'Internal server error' })
   }

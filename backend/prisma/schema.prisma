@@ -259,8 +259,8 @@ model InviteRedemption {
 
 enum DeployMode {
   CLOUD       // Docker container hosted by ClawHQ
-  LOCAL       // Local Connector via WebSocket relay
-  DASHBOARD   // Dashboard-only with bundled API (no external deploy)
+  CONNECTOR   // Connect existing OpenClaw via WebSocket relay
+  DESKTOP     // Download ClawHQ desktop app, runs locally
 }
 
 enum AgentStatus {

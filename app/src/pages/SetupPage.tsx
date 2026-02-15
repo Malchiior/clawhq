@@ -13,9 +13,9 @@ interface Message {
 const STORAGE_KEY = 'clawhq-setup-session'
 
 const quickReplies = [
-  { label: 'Connect Existing OpenClaw', value: 'I want to connect my existing OpenClaw', icon: '🔗' },
-  { label: 'Cloud Deploy', value: 'I want Cloud Deploy - host everything for me', icon: '☁️' },
-  { label: 'Download OpenClaw', value: 'I want to download OpenClaw and run it locally', icon: '💻' },
+  { label: 'Connect Existing', value: 'I want to connect my existing OpenClaw', icon: '🔗' },
+  { label: 'Cloud Hosted', value: 'I want Cloud Hosted - host everything for me', icon: '☁️' },
+  { label: 'Download ClawHQ', value: 'I want to download ClawHQ desktop app', icon: '💻' },
 ]
 
 function loadSession(): { messages: Message[]; progress: number } {

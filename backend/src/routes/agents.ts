@@ -65,7 +65,7 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
     }
 
     // Validate deploy mode
-    const validModes = ['CLOUD', 'LOCAL', 'DASHBOARD'];
+    const validModes = ['CLOUD', 'CONNECTOR', 'DESKTOP'];
     const mode = validModes.includes(deployMode) ? deployMode : 'CLOUD';
 
     // Check agent limit by plan
@@ -79,7 +79,7 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
       });
     }
 
-    // BYOK requires API key, but LOCAL and DASHBOARD modes can skip it
+    // BYOK requires API key, but CONNECTOR and DESKTOP modes can skip it
     if (!usesBundledApi && !apiKey && mode === 'CLOUD') {
       return res.status(400).json({ error: 'API key required for cloud deployment when not using bundled API' });
     }
@@ -89,9 +89,9 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ error: 'System prompt too long (max 10,000 characters)' });
     }
 
-    // For LOCAL mode, set status to STOPPED (will become RUNNING when relay connects)
-    // For DASHBOARD mode, set status to RUNNING immediately (uses bundled API)
-    const initialStatus = mode === 'DASHBOARD' ? 'RUNNING' : 'STOPPED';
+    // For CONNECTOR mode, set status to STOPPED (will become RUNNING when relay connects)
+    // For DESKTOP mode, set status to RUNNING immediately (uses bundled API)
+    const initialStatus = mode === 'DESKTOP' ? 'RUNNING' : 'STOPPED';
 
     const agent = await prisma.agent.create({
       data: {
@@ -100,8 +100,8 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
         modelProvider: modelProvider || 'claude',
         model: model || 'claude-sonnet-4-20250514',
         deployMode: mode,
-        apiKey: (usesBundledApi || mode === 'LOCAL') ? null : apiKey,
-        usesBundledApi: mode === 'DASHBOARD' ? true : !!usesBundledApi,
+        apiKey: (usesBundledApi || mode === 'CONNECTOR') ? null : apiKey,
+        usesBundledApi: mode === 'DESKTOP' ? true : !!usesBundledApi,
         channels: channels || [],
         status: initialStatus,
         systemPrompt: systemPrompt || null,
@@ -494,10 +494,10 @@ router.get('/:agentId/config', authenticate, async (req: AuthRequest, res: Respo
 
     const settings = await buildAgentSettings(agent);
 
-    if (format === 'snippet' && agent.deployMode === 'LOCAL') {
-      // Local connector snippet only
+    if (format === 'snippet' && agent.deployMode === 'CONNECTOR') {
+      // Connector snippet only
       const snippet = generateLocalSnippet(settings);
-      return res.json({ config: snippet, format: 'snippet', deployMode: 'LOCAL' });
+      return res.json({ config: snippet, format: 'snippet', deployMode: 'CONNECTOR' });
     }
 
     const yaml = generateOpenClawConfig(settings);

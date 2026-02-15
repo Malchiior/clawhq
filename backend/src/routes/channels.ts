@@ -39,8 +39,14 @@ router.get('/:id', async (req: AuthRequest, res: Response) => {
 router.post('/', async (req: AuthRequest, res: Response) => {
   try {
     const { type, config } = req.body
+    const validTypes = ['TELEGRAM', 'WHATSAPP', 'DISCORD', 'SLACK', 'IMESSAGE', 'TEAMS']
+    const normalizedType = typeof type === 'string' ? type.toUpperCase() : ''
+    if (!validTypes.includes(normalizedType)) {
+      res.status(400).json({ error: `Invalid channel type. Must be one of: ${validTypes.join(', ')}` })
+      return
+    }
     const channel = await prisma.channel.create({
-      data: { type, config, userId: req.userId! },
+      data: { type: normalizedType as any, config: config || {}, userId: req.userId! },
     })
     res.status(201).json({ channel })
   } catch {

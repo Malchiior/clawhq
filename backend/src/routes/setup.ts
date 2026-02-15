@@ -10,32 +10,29 @@ import { authenticate, AuthRequest } from '../middleware/auth'
 
 const router = Router()
 
-const INITIAL_MESSAGE = `Hey there! Welcome to ClawHQ - let's get your AI agent up and running.
+const INITIAL_MESSAGE = `Hey there! Welcome to ClawHQ — let's get your AI agent up and running.
 
-How would you like to set up?
+How would you like to get started?
 
-**1. Connect Existing OpenClaw** - Already running OpenClaw? Link it here.
+**1. Connect Existing** 🔗 — Already running OpenClaw? Link it here as your web/mobile interface.
 
-**2. Cloud Deploy** - We host everything. Pick a model and you're live in 30 seconds.
+**2. Cloud Hosted** ☁️ — We host everything. Pick a model, buy credits, live in 30 seconds.
 
-**3. Download OpenClaw** - Free! Run it on your own machine with your own API keys.
+**3. Download ClawHQ** 💻 — Install the desktop app on your PC. Run locally, bring your own keys or buy credits.
 
-Which sounds right for you?`
-
-// Scripted response trees
-const SCRIPTED_FLOWS: Record<string, { reply: string; nextStep: string }> = {}
+Which path is right for you?`
 
 function detectPath(message: string): string | null {
   const m = message.toLowerCase()
   if (m.includes('connect') || m.includes('existing') || m.includes('link') || m === '1') return 'connector'
   if (m.includes('cloud') || m.includes('host') || m === '2') return 'cloud'
-  if (m.includes('download') || m.includes('local') || m.includes('own machine') || m === '3') return 'download'
+  if (m.includes('download') || m.includes('desktop') || m.includes('local') || m.includes('own machine') || m.includes('my pc') || m === '3') return 'desktop'
   return null
 }
 
 function detectModel(message: string): string | null {
   const m = message.toLowerCase()
-  if (m.includes('sonnet') || m.includes('claude') && !m.includes('haiku') && !m.includes('opus')) return 'claude-sonnet-4-20250514'
+  if (m.includes('sonnet') || (m.includes('claude') && !m.includes('haiku') && !m.includes('opus'))) return 'claude-sonnet-4-20250514'
   if (m.includes('haiku')) return 'claude-3-haiku-20240307'
   if (m.includes('opus')) return 'claude-opus-4-6'
   if (m.includes('gpt') || m.includes('openai') || m.includes('4o')) return 'gpt-4o'
@@ -58,16 +55,16 @@ function detectOS(message: string): string | null {
 }
 
 interface SetupState {
-  path?: string       // connector | cloud | download
+  path?: string       // connector | cloud | desktop
   agentName?: string
   model?: string
   gatewayUrl?: string
   systemPrompt?: string
   os?: string
-  step: string        // path_select | connector_url | connector_name | cloud_purpose | cloud_name | cloud_model | cloud_personality | download_os | download_url | download_name | confirm
+  apiChoice?: string  // credits | byok
+  step: string
 }
 
-// In-memory setup states (per user)
 const setupStates: Map<string, SetupState> = new Map()
 
 function getState(userId: string): SetupState {
@@ -85,21 +82,21 @@ function processMessage(userId: string, message: string): { reply: string; setup
     case 'path_select': {
       const path = detectPath(m)
       if (!path) {
-        return { reply: "I didn't catch that. Just pick a number:\n\n**1.** Connect Existing OpenClaw\n**2.** Cloud Deploy\n**3.** Download OpenClaw" }
+        return { reply: "I didn't catch that. Just pick a number:\n\n**1.** Connect Existing 🔗\n**2.** Cloud Hosted ☁️\n**3.** Download ClawHQ 💻" }
       }
       state.path = path
 
       if (path === 'connector') {
         state.step = 'connector_url'
-        return { reply: "Great choice! 🔗\n\nWhat's your OpenClaw gateway URL? It usually looks like `http://localhost:18789` or `https://your-server.com:18789`." }
+        return { reply: "Great choice! 🔗 ClawHQ becomes your web & mobile interface for OpenClaw.\n\nWhat's your OpenClaw gateway URL? It usually looks like `http://localhost:18789` or `https://your-server.com:18789`." }
       }
       if (path === 'cloud') {
         state.step = 'cloud_name'
-        return { reply: "Awesome! Cloud Deploy is the fastest way to get started. ☁️\n\nWhat would you like to name your agent?" }
+        return { reply: "Awesome! Cloud Hosted is the fastest way to get started. ☁️\n\nWhat would you like to name your agent?" }
       }
-      if (path === 'download') {
-        state.step = 'download_os'
-        return { reply: "Nice, the DIY route! 💻\n\nWhat operating system are you on?\n- **Windows**\n- **Mac**\n- **Linux**" }
+      if (path === 'desktop') {
+        state.step = 'desktop_os'
+        return { reply: "Nice choice! 💻 The ClawHQ desktop app runs OpenClaw right on your machine — no remote servers needed.\n\nWhat operating system are you on?\n- **Windows**\n- **Mac**\n- **Linux**" }
       }
       break
     }
@@ -118,17 +115,11 @@ function processMessage(userId: string, message: string): { reply: string; setup
       state.agentName = m
       state.step = 'confirm'
       return {
-        reply: `Perfect! Here's what we're setting up:\n\n🔗 **Mode:** Connect to Existing OpenClaw\n🌐 **Gateway:** ${state.gatewayUrl}\n🤖 **Agent Name:** ${state.agentName}\n\nLook good? Type **yes** to finish setup.`,
+        reply: `Perfect! Here's what we're setting up:\n\n🔗 **Mode:** Connect Existing\n🌐 **Gateway:** ${state.gatewayUrl}\n🤖 **Agent Name:** ${state.agentName}\n\nLook good? Type **yes** to finish setup.`,
       }
     }
 
     // ── Cloud Path ──
-    case 'cloud_purpose': {
-      state.systemPrompt = `You are ${m}. Be helpful, concise, and friendly.`
-      state.step = 'cloud_name'
-      return { reply: `Love it! What would you like to name your agent?` }
-    }
-
     case 'cloud_name': {
       state.agentName = m
       state.step = 'cloud_model'
@@ -146,51 +137,57 @@ function processMessage(userId: string, message: string): { reply: string; setup
       state.step = 'confirm'
       const modelName = model.includes('sonnet') ? 'Claude Sonnet' : model.includes('haiku') ? 'Claude Haiku' : model.includes('gpt') ? 'GPT-4o' : model.includes('gemini') ? 'Gemini Flash' : model
       return {
-        reply: `Here's your setup:\n\n☁️ **Mode:** Cloud Deploy\n🤖 **Agent:** ${state.agentName}\n🧠 **Model:** ${modelName}\n\nLook good? Type **yes** to deploy!`
+        reply: `Here's your setup:\n\n☁️ **Mode:** Cloud Hosted\n🤖 **Agent:** ${state.agentName}\n🧠 **Model:** ${modelName}\n\nLook good? Type **yes** to deploy!`
       }
     }
 
-    // ── Download Path ──
-    case 'download_os': {
+    // ── Desktop Path ──
+    case 'desktop_os': {
       const os = detectOS(m)
       if (!os) {
         return { reply: "Which OS? Just say **Windows**, **Mac**, or **Linux**." }
       }
       state.os = os
-      state.step = 'download_install'
-      const installCmd = os === 'windows'
-        ? "```\nnpm install -g openclaw\nopenclaw init\nopenclaw start\n```"
-        : "```bash\nnpm install -g openclaw\nopenclaw init\nopenclaw start\n```"
+      state.step = 'desktop_download'
+      const osLabel = os.charAt(0).toUpperCase() + os.slice(1)
+      const downloadLinks: Record<string, string> = {
+        windows: 'https://clawhq.dev/download/windows',
+        mac: 'https://clawhq.dev/download/mac',
+        linux: 'https://clawhq.dev/download/linux',
+      }
       return {
-        reply: `Here's how to install OpenClaw on ${os.charAt(0).toUpperCase() + os.slice(1)}:\n\n**Requires Node.js 18+** — [Download Node.js](https://nodejs.org)\n\nThen run:\n${installCmd}\n\nOnce it's running, come back and paste your gateway URL (shown in the terminal). Or type **skip** to set it up later.`
+        reply: `Here's your download link:\n\n📥 **[Download ClawHQ for ${osLabel}](${downloadLinks[os]})**\n\nInstall and launch the app — it'll set up OpenClaw locally in a container for you.\n\nWhile that installs, how would you like to handle API access?\n\n**1. Buy ClawHQ Credits** — All models included, one bill, no hassle\n**2. Bring Your Own Keys (BYOK)** — Use your own API keys\n\nOr type **skip** to decide later.`
       }
     }
 
-    case 'download_install': {
-      if (m.toLowerCase() === 'skip') {
-        state.step = 'download_name'
-        return { reply: "No problem! You can connect it later from the dashboard.\n\nWhat would you like to name your agent?" }
+    case 'desktop_download': {
+      const lower = m.toLowerCase()
+      if (lower.includes('credit') || lower.includes('buy') || lower === '1') {
+        state.apiChoice = 'credits'
+      } else if (lower.includes('byok') || lower.includes('own') || lower.includes('key') || lower === '2') {
+        state.apiChoice = 'byok'
+      } else if (lower === 'skip') {
+        state.apiChoice = 'skip'
+      } else {
+        return { reply: "Just pick:\n**1.** Buy ClawHQ Credits\n**2.** Bring Your Own Keys (BYOK)\nOr type **skip** to decide later." }
       }
-      if (m.includes('http') || m.includes('localhost')) {
-        state.gatewayUrl = m
-        state.step = 'download_name'
-        return { reply: `Got your gateway at ${m}! What would you like to name your agent?` }
-      }
-      return { reply: "Paste your gateway URL once OpenClaw is running (looks like `http://localhost:18789`), or type **skip** to set it up later." }
+      state.step = 'desktop_name'
+      return { reply: "What would you like to name your agent?" }
     }
 
-    case 'download_name': {
+    case 'desktop_name': {
       state.agentName = m
       state.step = 'confirm'
+      const apiLabel = state.apiChoice === 'credits' ? '💳 ClawHQ Credits' : state.apiChoice === 'byok' ? '🔑 Bring Your Own Keys' : '⏭️ Decide later'
       return {
-        reply: `Here's your setup:\n\n💻 **Mode:** Local (Download)\n${state.gatewayUrl ? `🌐 **Gateway:** ${state.gatewayUrl}\n` : ''}🤖 **Agent:** ${state.agentName}\n\nLook good? Type **yes** to finish!`
+        reply: `Here's your setup:\n\n💻 **Mode:** Desktop App\n💿 **OS:** ${(state.os || 'unknown').charAt(0).toUpperCase() + (state.os || 'unknown').slice(1)}\n🔌 **API:** ${apiLabel}\n🤖 **Agent:** ${state.agentName}\n\nLook good? Type **yes** to finish!`
       }
     }
 
     // ── Confirmation ──
     case 'confirm': {
       if (m.toLowerCase().includes('yes') || m.toLowerCase().includes('confirm') || m.toLowerCase() === 'y') {
-        const deployMode = state.path === 'cloud' ? 'CLOUD' : state.path === 'connector' ? 'LOCAL' : 'LOCAL'
+        const deployMode = state.path === 'cloud' ? 'CLOUD' : state.path === 'connector' ? 'CONNECTOR' : 'DESKTOP'
         return {
           reply: `🎉 **Your agent "${state.agentName}" is ready!** Redirecting you to your dashboard...`,
           setupComplete: true,
@@ -203,15 +200,13 @@ function processMessage(userId: string, message: string): { reply: string; setup
           }
         }
       }
-      // They want to change something
       state.step = 'path_select'
-      return { reply: "No worries, let's start over!\n\nHow would you like to set up?\n\n**1.** Connect Existing OpenClaw\n**2.** Cloud Deploy\n**3.** Download OpenClaw" }
+      return { reply: "No worries, let's start over!\n\nHow would you like to get started?\n\n**1.** Connect Existing 🔗\n**2.** Cloud Hosted ☁️\n**3.** Download ClawHQ 💻" }
     }
   }
 
-  // Fallback
   state.step = 'path_select'
-  return { reply: "Let's get you set up! Pick an option:\n\n**1.** Connect Existing OpenClaw\n**2.** Cloud Deploy\n**3.** Download OpenClaw" }
+  return { reply: "Let's get you set up! Pick an option:\n\n**1.** Connect Existing 🔗\n**2.** Cloud Hosted ☁️\n**3.** Download ClawHQ 💻" }
 }
 
 // GET /api/setup/status
@@ -259,7 +254,6 @@ router.post('/message', authenticate, async (req: AuthRequest, res: Response) =>
         data: { setupComplete: true, setupStep: 'complete' }
       })
 
-      // Clean up state
       setupStates.delete(userId)
 
       return res.json({
