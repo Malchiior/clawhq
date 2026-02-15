@@ -3,7 +3,7 @@ import prisma from '../lib/prisma'
 import { authenticate, AuthRequest } from '../middleware/auth'
 import { relayManager } from '../lib/relay'
 import { proxyChatForUser } from '../lib/ai-proxy'
-import { emitChatMessage, isBridgeConnected, sendBridgeMessage } from '../lib/socket'
+import { emitChatMessage, isBridgeConnected, sendBridgeMessage, getBridgeHealth, sendBridgeCommand } from '../lib/socket'
 import multer from 'multer'
 
 const router = Router()
@@ -374,10 +374,40 @@ router.get('/:agentId/bridge-status', authenticate, async (req: AuthRequest, res
     const agent = await prisma.agent.findFirst({ where: { id: agentId, userId } })
     if (!agent) { res.status(404).json({ error: 'Agent not found' }); return }
 
-    res.json({ connected: isBridgeConnected(agentId) })
+    res.json({
+      connected: isBridgeConnected(agentId),
+      health: getBridgeHealth(agentId),
+    })
   } catch (error) {
     console.error('Bridge status error:', error)
     res.status(500).json({ error: 'Failed to check bridge status' })
+  }
+})
+
+// POST /api/chat/:agentId/bridge-command - Send command to bridge
+router.post('/:agentId/bridge-command', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const agentId = req.params.agentId as string
+    const userId = req.userId!
+    const { command } = req.body
+
+    const agent = await prisma.agent.findFirst({ where: { id: agentId, userId } })
+    if (!agent) { res.status(404).json({ error: 'Agent not found' }); return }
+
+    if (!isBridgeConnected(agentId)) {
+      res.status(400).json({ error: 'Bridge not connected' }); return
+    }
+
+    const validCommands = ['health-check', 'start-gateway', 'install-openclaw', 'restart-gateway']
+    if (!validCommands.includes(command)) {
+      res.status(400).json({ error: `Invalid command. Valid: ${validCommands.join(', ')}` }); return
+    }
+
+    const result = await sendBridgeCommand(agentId, command)
+    res.json({ result })
+  } catch (error: any) {
+    console.error('Bridge command error:', error)
+    res.status(500).json({ error: error.message || 'Failed to send bridge command' })
   }
 })
 

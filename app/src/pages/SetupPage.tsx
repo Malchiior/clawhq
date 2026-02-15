@@ -51,6 +51,8 @@ export default function SetupPage() {
   const [handoffPhase, setHandoffPhase] = useState(0) // 0=none, 1=celebrating, 2=transitioning
   const [bridgeData, setBridgeData] = useState<{ agentId: string; agentName: string; bridgeToken: string; bridgeCommand: string } | null>(null)
   const [bridgeConnected, setBridgeConnected] = useState(false)
+  const [bridgeHealth, setBridgeHealth] = useState<any>(null)
+  const [commandLoading, setCommandLoading] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
   const messagesRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -84,25 +86,69 @@ export default function SetupPage() {
       })
   }, [])
 
-  // Bridge polling
+  // Bridge polling with health
   useEffect(() => {
     if (!bridgeData || bridgeConnected) return
     const interval = setInterval(async () => {
       try {
         const data = await apiFetch(`/api/chat/${bridgeData.agentId}/bridge-status`)
+        if (data.health) setBridgeHealth(data.health)
         if (data.connected) {
           setBridgeConnected(true)
-          clearInterval(interval)
-          setMessages(prev => [...prev, { id: 'bridge-ok', role: 'assistant', content: '✅ **Bridge connected!** Redirecting to your dashboard...' }])
-          await apiFetch('/api/setup/bridge-connected', { method: 'POST' })
-          clearSession()
-          setProgress(100)
-          setTimeout(() => { window.location.href = `/agents/${bridgeData.agentId}/chat` }, 2000)
+          // Check if gateway is running too
+          if (data.health?.gatewayRunning) {
+            clearInterval(interval)
+            setMessages(prev => [...prev, { id: 'bridge-ok', role: 'assistant', content: '✅ **Connected!** OpenClaw is running and bridge is linked. Redirecting to your agent...' }])
+            await apiFetch('/api/setup/bridge-connected', { method: 'POST' })
+            clearSession()
+            setProgress(100)
+            setTimeout(() => { window.location.href = `/agents/${bridgeData.agentId}/chat` }, 2000)
+          } else if (data.health?.status === 'installed-stopped') {
+            // Bridge connected but gateway not running — try auto-start
+            setMessages(prev => {
+              if (prev.some(m => m.id === 'auto-start')) return prev
+              return [...prev, { id: 'auto-start', role: 'assistant', content: '🔄 **OpenClaw found but not running.** Starting it for you...' }]
+            })
+            try {
+              await apiFetch(`/api/chat/${bridgeData.agentId}/bridge-command`, {
+                method: 'POST', body: JSON.stringify({ command: 'start-gateway' })
+              })
+            } catch {}
+          } else if (data.health?.status === 'not-installed') {
+            setMessages(prev => {
+              if (prev.some(m => m.id === 'not-installed')) return prev
+              return [...prev, { id: 'not-installed', role: 'assistant', content: "⚠️ **OpenClaw isn't installed on your PC yet.** Use the button below to install it, or switch to a remote server setup." }]
+            })
+          }
         }
       } catch {}
     }, 3000)
     return () => clearInterval(interval)
   }, [bridgeData, bridgeConnected])
+
+  const sendBridgeCommand = async (command: string) => {
+    if (!bridgeData || commandLoading) return
+    setCommandLoading(command)
+    try {
+      const result = await apiFetch(`/api/chat/${bridgeData.agentId}/bridge-command`, {
+        method: 'POST', body: JSON.stringify({ command })
+      })
+      if (result.result?.health) setBridgeHealth(result.result.health)
+      if (command === 'install-openclaw' && result.result?.success) {
+        setMessages(prev => [...prev, { id: `cmd-${Date.now()}`, role: 'assistant', content: '✅ **OpenClaw installed!** Now starting the gateway...' }])
+        // Auto-start after install
+        await apiFetch(`/api/chat/${bridgeData.agentId}/bridge-command`, {
+          method: 'POST', body: JSON.stringify({ command: 'start-gateway' })
+        })
+      } else if (command === 'start-gateway' && result.result?.success) {
+        setMessages(prev => [...prev, { id: `cmd-${Date.now()}`, role: 'assistant', content: '✅ **Gateway started!** Connecting...' }])
+      }
+    } catch (err: any) {
+      setMessages(prev => [...prev, { id: `err-${Date.now()}`, role: 'assistant', content: `❌ ${err.message || 'Command failed'}` }])
+    } finally {
+      setCommandLoading(null)
+    }
+  }
 
   // Persist session
   useEffect(() => { saveSession(messages, progress) }, [messages, progress])
@@ -331,26 +377,27 @@ export default function SetupPage() {
             }}>
               <h3 className="text-white font-semibold text-base mb-4">🔗 Connect your bridge</h3>
 
-              {/* Option A: Download */}
+              {/* Step 1: Download bridge */}
+              <p className="text-sm text-gray-300 mb-3">Download and run the bridge to connect ClawHQ to your PC:</p>
+
               <button onClick={() => {
                 const os = navigator.userAgent.includes('Mac') ? 'mac' : navigator.userAgent.includes('Linux') ? 'linux' : 'windows'
                 const apiBase = import.meta.env.VITE_API_URL || ''
                 window.location.href = `${apiBase}/api/setup/bridge-download?token=${bridgeData.bridgeToken}&agent=${bridgeData.agentId}&os=${os}`
               }}
-                className="flex items-center justify-center gap-2 w-full px-4 py-2.5 rounded-xl text-sm font-medium mb-4 transition-all hover:scale-[1.02] active:scale-[0.98]"
+                className="flex items-center justify-center gap-2 w-full px-4 py-2.5 rounded-xl text-sm font-medium mb-3 transition-all hover:scale-[1.02] active:scale-[0.98]"
                 style={{ background: 'linear-gradient(135deg, #7c3aed, #a855f7)', color: '#fff' }}>
                 <Download size={16} /> Download Bridge Script
               </button>
-              <p className="text-xs text-gray-500 mb-4 text-center">Downloaded! Double-click the file to start the bridge.</p>
+              <p className="text-xs text-gray-500 mb-4 text-center">Double-click the downloaded file to run it.</p>
 
               {/* Divider */}
               <div className="flex items-center gap-3 mb-4">
                 <div className="flex-1 h-px" style={{ background: '#2a2a4a' }} />
-                <span className="text-xs text-gray-500">or run with npx</span>
+                <span className="text-xs text-gray-500">or run manually</span>
                 <div className="flex-1 h-px" style={{ background: '#2a2a4a' }} />
               </div>
 
-              {/* Option B: npx command */}
               <div className="relative rounded-lg p-3 mb-4" style={{ background: '#0a0a1a', border: '1px solid #2a2a4a' }}>
                 <code className="text-xs sm:text-sm text-purple-300 break-all select-all">{bridgeData.bridgeCommand}</code>
                 <button
@@ -362,7 +409,7 @@ export default function SetupPage() {
                 </button>
               </div>
 
-              {/* Waiting indicator */}
+              {/* Waiting / Status indicator */}
               <div className="flex items-center gap-2 text-sm text-gray-400">
                 <span className="relative flex h-2.5 w-2.5">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-purple-400 opacity-75" />
@@ -372,10 +419,55 @@ export default function SetupPage() {
               </div>
             </div>
 
-            {/* Skip link */}
-            <button onClick={skipSetup} className="mt-3 text-xs text-gray-500 hover:text-gray-300 transition-colors">
-              Skip for now →
-            </button>
+            <p className="mt-3 text-xs text-gray-500">
+              The bridge connects ClawHQ to your local OpenClaw. It must stay running.
+            </p>
+          </div>
+        )}
+
+        {/* Smart Health Status Card - shown after bridge connects but gateway has issues */}
+        {bridgeData && bridgeConnected && bridgeHealth && !bridgeHealth.gatewayRunning && (
+          <div className="mb-4 ml-9 sm:ml-11">
+            <div className="rounded-2xl p-5 sm:p-6" style={{
+              background: '#1a1a2e',
+              border: bridgeHealth.status === 'not-installed' ? '1px solid #ef4444' : '1px solid #f59e0b',
+              boxShadow: bridgeHealth.status === 'not-installed' ? '0 0 20px rgba(239, 68, 68, 0.15)' : '0 0 20px rgba(245, 158, 11, 0.15)',
+            }}>
+              {bridgeHealth.status === 'not-installed' ? (
+                <>
+                  <h3 className="text-white font-semibold text-base mb-2">📦 OpenClaw Not Installed</h3>
+                  <p className="text-sm text-gray-300 mb-4">OpenClaw isn't on this computer yet. Install it with one click:</p>
+                  <button
+                    onClick={() => sendBridgeCommand('install-openclaw')}
+                    disabled={!!commandLoading}
+                    className="flex items-center justify-center gap-2 w-full px-4 py-2.5 rounded-xl text-sm font-medium mb-3 transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
+                    style={{ background: 'linear-gradient(135deg, #7c3aed, #a855f7)', color: '#fff' }}>
+                    {commandLoading === 'install-openclaw' ? (
+                      <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Installing...</>
+                    ) : (
+                      <><Download size={16} /> Install OpenClaw Now</>
+                    )}
+                  </button>
+                  <p className="text-xs text-gray-500 text-center">This runs <code>npm install -g openclaw</code> on your PC</p>
+                </>
+              ) : (
+                <>
+                  <h3 className="text-white font-semibold text-base mb-2">😴 OpenClaw Is Sleeping</h3>
+                  <p className="text-sm text-gray-300 mb-4">OpenClaw is installed (v{bridgeHealth.clawVersion}) but the gateway isn't running.</p>
+                  <button
+                    onClick={() => sendBridgeCommand('start-gateway')}
+                    disabled={!!commandLoading}
+                    className="flex items-center justify-center gap-2 w-full px-4 py-2.5 rounded-xl text-sm font-medium mb-3 transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
+                    style={{ background: 'linear-gradient(135deg, #22c55e, #16a34a)', color: '#fff' }}>
+                    {commandLoading === 'start-gateway' ? (
+                      <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Starting...</>
+                    ) : (
+                      <><Zap size={16} /> Start OpenClaw</>
+                    )}
+                  </button>
+                </>
+              )}
+            </div>
           </div>
         )}
       </div>

@@ -132,7 +132,11 @@ const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function ChatPanel
     const handleMessage = (msg: ChatMessage) => {
       setMessages(prev => {
         if (prev.some(m => m.id === msg.id)) return prev
-        return [...prev, msg]
+        // If this is a real user message arriving via socket, remove any temp optimistic message
+        const filtered = msg.role === 'user'
+          ? prev.filter(m => !(m.id.startsWith('temp-') && m.role === 'user'))
+          : prev
+        return [...filtered, msg]
       })
       scrollToBottom()
     }
@@ -995,49 +999,75 @@ function getFileTypeLabel(mimeType: string): string {
 }
 
 function BridgeBanner({ connected, agentId }: { connected: boolean | null; agentId: string }) {
-  const [expanded, setExpanded] = useState(false)
+  const [health, setHealth] = useState<any>(null)
+  const [actionLoading, setActionLoading] = useState(false)
 
-  if (connected === true) {
+  // Fetch health with status
+  useEffect(() => {
+    if (connected !== true && connected !== false) return
+    apiFetch(`/api/chat/${agentId}/bridge-status`)
+      .then(data => { if (data.health) setHealth(data.health) })
+      .catch(() => {})
+  }, [connected, agentId])
+
+  const sendCommand = async (cmd: string) => {
+    setActionLoading(true)
+    try {
+      const res = await apiFetch(`/api/chat/${agentId}/bridge-command`, {
+        method: 'POST', body: JSON.stringify({ command: cmd })
+      })
+      if (res.result?.health) setHealth(res.result.health)
+    } catch {}
+    setActionLoading(false)
+  }
+
+  if (connected === true && health?.gatewayRunning) {
     return (
       <div className="flex items-center gap-2 px-4 py-1.5 text-xs border-b border-border bg-success/5 text-success">
         <div className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
-        🔗 Connected via bridge
+        🔗 Connected via bridge {health.clawVersion ? `· OpenClaw ${health.clawVersion}` : ''}
       </div>
     )
   }
 
-  return (
-    <div className="border-b border-border">
-      <div className="flex items-center gap-2 px-4 py-1.5 text-xs bg-warning/5 text-warning">
+  if (connected === true && health?.status === 'installed-stopped') {
+    return (
+      <div className="flex items-center gap-2 px-4 py-1.5 text-xs border-b border-border bg-warning/5 text-warning">
+        <div className="w-1.5 h-1.5 rounded-full bg-warning" />
+        😴 OpenClaw is sleeping
+        <button onClick={() => sendCommand('start-gateway')} disabled={actionLoading}
+          className="ml-auto text-[10px] bg-warning/20 px-2 py-0.5 rounded hover:bg-warning/30 transition-colors disabled:opacity-50">
+          {actionLoading ? 'Starting...' : '⚡ Wake Up'}
+        </button>
+      </div>
+    )
+  }
+
+  if (connected === true && health?.status === 'not-installed') {
+    return (
+      <div className="flex items-center gap-2 px-4 py-1.5 text-xs border-b border-border bg-error/5 text-error">
+        <div className="w-1.5 h-1.5 rounded-full bg-error" />
+        📦 OpenClaw not installed
+        <button onClick={() => sendCommand('install-openclaw')} disabled={actionLoading}
+          className="ml-auto text-[10px] bg-error/20 px-2 py-0.5 rounded hover:bg-error/30 transition-colors disabled:opacity-50">
+          {actionLoading ? 'Installing...' : '📥 Install Now'}
+        </button>
+      </div>
+    )
+  }
+
+  if (connected === false || connected === null) {
+    return (
+      <div className="flex items-center gap-2 px-4 py-1.5 text-xs border-b border-border bg-warning/5 text-warning">
         <div className={`w-1.5 h-1.5 rounded-full ${connected === false ? 'bg-warning' : 'bg-text-muted'}`} />
         {connected === false
-          ? '🔌 Bridge not connected. Run the ClawHQ Bridge on your PC to connect.'
+          ? '🔌 Bridge not connected. Is the bridge script running on your PC?'
           : '⏳ Checking bridge status...'}
-        {connected === false && (
-          <button
-            onClick={() => setExpanded(!expanded)}
-            className="ml-auto text-[10px] underline hover:no-underline"
-          >
-            {expanded ? 'Hide' : 'Setup Instructions'}
-          </button>
-        )}
       </div>
-      {expanded && (
-        <div className="px-4 py-2.5 text-[11px] text-text-muted bg-navy/20 font-mono leading-relaxed space-y-1">
-          <p className="text-text-secondary font-sans font-medium mb-1.5">Run the ClawHQ Bridge:</p>
-          <p>1. <code className="bg-navy/40 px-1 rounded">cd clawhq/bridge</code></p>
-          <p>2. <code className="bg-navy/40 px-1 rounded">npm install</code></p>
-          <p>3. Set environment variables:</p>
-          <div className="pl-4 space-y-0.5">
-            <p><code className="bg-navy/40 px-1 rounded">CLAWHQ_URL=https://clawhq-api-production-f6d7.up.railway.app</code></p>
-            <p><code className="bg-navy/40 px-1 rounded">BRIDGE_TOKEN=&lt;your-jwt-token&gt;</code></p>
-            <p><code className="bg-navy/40 px-1 rounded">AGENT_ID={agentId}</code></p>
-          </div>
-          <p>4. <code className="bg-navy/40 px-1 rounded">npm start</code></p>
-        </div>
-      )}
-    </div>
-  )
+    )
+  }
+
+  return null
 }
 
 function FileTypeIcon({ type, className }: { type: string; className?: string }) {

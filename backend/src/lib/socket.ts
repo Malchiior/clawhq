@@ -9,6 +9,10 @@ let io: Server | null = null
 const bridgeSockets: Map<string, string> = new Map()
 // Maps socket.id → agentId for cleanup on disconnect
 const socketToAgent: Map<string, string> = new Map()
+// Maps agentId → latest health report from bridge
+const bridgeHealth: Map<string, any> = new Map()
+// Maps requestId → { resolve, timer } for bridge commands
+const pendingCommands: Map<string, { resolve: (result: any) => void; timer: ReturnType<typeof setTimeout> }> = new Map()
 
 // Pending bridge responses: messageId → { resolve, reject, timer }
 const pendingBridgeResponses: Map<string, {
@@ -22,6 +26,28 @@ export function isBridgeConnected(agentId: string): boolean {
   if (!socketId || !io) return false
   const socket = io.sockets.sockets.get(socketId)
   return !!socket?.connected
+}
+
+export function getBridgeHealth(agentId: string): any {
+  return bridgeHealth.get(agentId) || null
+}
+
+export function sendBridgeCommand(agentId: string, command: string): Promise<any> {
+  return new Promise((resolve, reject) => {
+    const socketId = bridgeSockets.get(agentId)
+    if (!socketId || !io) return reject(new Error('Bridge not connected'))
+    const socket = io.sockets.sockets.get(socketId)
+    if (!socket?.connected) return reject(new Error('Bridge not connected'))
+
+    const requestId = `cmd-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    const timer = setTimeout(() => {
+      pendingCommands.delete(requestId)
+      reject(new Error('Command timeout (60s)'))
+    }, 60_000)
+
+    pendingCommands.set(requestId, { resolve, timer })
+    socket.emit('bridge:command', { command, requestId })
+  })
 }
 
 export function sendBridgeMessage(agentId: string, messageId: string, content: string, attachments?: any[]): Promise<string> {
@@ -106,9 +132,9 @@ export function initSocketIO(httpServer: HttpServer, corsOrigins: string[]) {
     })
 
     // ─── Bridge Events ─────────────────────────────────────────────────
-    socket.on('bridge:register', async (data: { agentId: string }) => {
+    socket.on('bridge:register', async (data: { agentId: string; health?: any }) => {
       try {
-        const { agentId } = data
+        const { agentId, health } = data
         if (!agentId) {
           socket.emit('bridge:error', { message: 'agentId required' })
           return
@@ -143,8 +169,15 @@ export function initSocketIO(httpServer: HttpServer, corsOrigins: string[]) {
           data: { status: 'RUNNING', lastHeartbeat: new Date() },
         })
 
+        // Store health if provided
+        if (health) {
+          bridgeHealth.set(agentId, { ...health, updatedAt: new Date().toISOString() })
+        }
+
         socket.emit('bridge:registered', { agentId })
-        console.log(`🌉 Bridge registered for agent ${agent.name} (${agentId})`)
+        // Notify frontend watchers about bridge health
+        io!.to(`agent:${agentId}`).emit('bridge:health', { agentId, connected: true, health: bridgeHealth.get(agentId) })
+        console.log(`🌉 Bridge registered for agent ${agent.name} (${agentId}) [${health?.status || 'unknown'}]`)
       } catch (err: any) {
         console.error('Bridge register error:', err.message)
         socket.emit('bridge:error', { message: 'Registration failed' })
@@ -164,10 +197,15 @@ export function initSocketIO(httpServer: HttpServer, corsOrigins: string[]) {
       }
     })
 
-    socket.on('bridge:status', async (data: { agentId: string }) => {
-      // Heartbeat from bridge
+    socket.on('bridge:status', async (data: { agentId: string; health?: any }) => {
+      // Heartbeat from bridge with health data
       const agentId = data?.agentId || socketToAgent.get(socket.id)
       if (agentId) {
+        if (data.health) {
+          bridgeHealth.set(agentId, { ...data.health, updatedAt: new Date().toISOString() })
+          // Push health update to frontend watchers
+          io!.to(`agent:${agentId}`).emit('bridge:health', { agentId, connected: true, health: data.health })
+        }
         try {
           await prisma.agent.update({
             where: { id: agentId },
@@ -177,12 +215,31 @@ export function initSocketIO(httpServer: HttpServer, corsOrigins: string[]) {
       }
     })
 
+    socket.on('bridge:command-result', (data: { requestId: string; agentId: string; command: string; result: any }) => {
+      const { requestId, agentId, result } = data
+      // Update health if included
+      if (result?.health) {
+        bridgeHealth.set(agentId, { ...result.health, updatedAt: new Date().toISOString() })
+        io!.to(`agent:${agentId}`).emit('bridge:health', { agentId, connected: true, health: result.health })
+      }
+      // Resolve pending command
+      const pending = pendingCommands.get(requestId)
+      if (pending) {
+        clearTimeout(pending.timer)
+        pendingCommands.delete(requestId)
+        pending.resolve(result)
+      }
+    })
+
     socket.on('disconnect', async () => {
       // Cleanup bridge registration
       const agentId = socketToAgent.get(socket.id)
       if (agentId) {
         bridgeSockets.delete(agentId)
         socketToAgent.delete(socket.id)
+        bridgeHealth.delete(agentId)
+        // Notify frontend
+        io!.to(`agent:${agentId}`).emit('bridge:health', { agentId, connected: false, health: null })
         try {
           await prisma.agent.update({
             where: { id: agentId },
