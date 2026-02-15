@@ -87,8 +87,9 @@ function processMessage(userId: string, message: string): { reply: string; setup
       state.path = path
 
       if (path === 'connector') {
-        state.step = 'connector_url'
-        return { reply: "Great choice! 🔗 ClawHQ becomes your web & mobile interface for OpenClaw.\n\nWhat's your OpenClaw gateway URL? It usually looks like `http://localhost:18789` or `https://your-server.com:18789`." }
+        state.gatewayUrl = 'http://localhost:18789'
+        state.step = 'connector_name'
+        return { reply: "Great choice! 🔗 ClawHQ becomes your web & mobile interface for OpenClaw.\n\nWe'll connect to your local OpenClaw at `localhost:18789` (the default). What would you like to name your agent?" }
       }
       if (path === 'cloud') {
         state.step = 'cloud_name'
@@ -112,10 +113,15 @@ function processMessage(userId: string, message: string): { reply: string; setup
     }
 
     case 'connector_name': {
+      // If user typed a URL instead of a name, treat it as custom gateway URL
+      if (m.includes('http') || m.includes('localhost')) {
+        state.gatewayUrl = m
+        return { reply: `Updated gateway to ${m}. Now, what would you like to name your agent?` }
+      }
       state.agentName = m
       state.step = 'confirm'
       return {
-        reply: `Perfect! Here's what we're setting up:\n\n🔗 **Mode:** Connect Existing\n🌐 **Gateway:** ${state.gatewayUrl}\n🤖 **Agent Name:** ${state.agentName}\n\nLook good? Type **yes** to finish setup.`,
+        reply: `Perfect! Here's what we're setting up:\n\n🔗 **Mode:** Connect Existing\n🌐 **Gateway:** ${state.gatewayUrl}\n🤖 **Agent Name:** ${state.agentName}\n\nLook good? Type **yes** to finish. (Not on localhost:18789? Just paste your custom URL instead.)`,
       }
     }
 
