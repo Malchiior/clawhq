@@ -19,7 +19,7 @@ router.get('/', authenticate, async (req: AuthRequest, res) => {
     const projects = await prisma.project.findMany({
       where: { userId: req.userId! },
       orderBy: { updatedAt: 'desc' },
-      include: { _count: { select: { items: true } } },
+      include: { _count: { select: { items: true } }, agent: { select: { id: true, name: true, model: true, status: true } } },
     })
     res.json(projects)
   } catch (err) {
@@ -78,7 +78,7 @@ router.get('/:id', authenticate, async (req: AuthRequest, res) => {
     const projectId = req.params.id as string
     const project = await prisma.project.findFirst({
       where: { id: projectId, userId: req.userId! },
-      include: { items: { orderBy: { order: 'asc' } } },
+      include: { items: { orderBy: { order: 'asc' } }, agent: { select: { id: true, name: true, model: true, status: true } } },
     })
     if (!project) { res.status(404).json({ error: 'Project not found' }); return }
     res.json(project)
@@ -95,7 +95,7 @@ router.patch('/:id', authenticate, async (req: AuthRequest, res) => {
     const existing = await prisma.project.findFirst({ where: { id: projectId, userId: req.userId! } })
     if (!existing) { res.status(404).json({ error: 'Project not found' }); return }
 
-    const { name, description, color, status, techStack } = req.body
+    const { name, description, color, status, techStack, agentId } = req.body
     const project = await prisma.project.update({
       where: { id: projectId },
       data: {
@@ -104,7 +104,9 @@ router.patch('/:id', authenticate, async (req: AuthRequest, res) => {
         ...(color !== undefined && { color }),
         ...(status !== undefined && { status }),
         ...(techStack !== undefined && { techStack }),
+        ...(agentId !== undefined && { agentId: agentId || null }),
       },
+      include: { agent: { select: { id: true, name: true, model: true, status: true } } },
     })
     res.json(project)
   } catch (err) {

@@ -139,6 +139,7 @@ model Agent {
   memories      AgentMemory[]
   snapshots     AgentSnapshot[]
   chatMessages  ChatMessage[]
+  projects      Project[]
 }
 
 model Channel {
@@ -412,6 +413,8 @@ model Project {
   startedFrom String   @default("scratch")
   userId      String
   user        User     @relation(fields: [userId], references: [id])
+  agentId     String?
+  agent       Agent?   @relation(fields: [agentId], references: [id], onDelete: SetNull)
   items       ProjectItem[]
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt

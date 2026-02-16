@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, ChevronDown, ChevronRight, Plus, Trash2, Check, Edit3, X, Save } from 'lucide-react'
+import { ArrowLeft, ChevronDown, ChevronRight, Plus, Trash2, Check, Edit3, X, Save, Bot } from 'lucide-react'
 import { apiFetch } from '../lib/api'
 
 interface ProjectItem {
@@ -14,6 +14,13 @@ interface ProjectItem {
   blockedBy: string | null
 }
 
+interface AgentBasic {
+  id: string
+  name: string
+  model: string
+  status: string
+}
+
 interface Project {
   id: string
   name: string
@@ -25,6 +32,8 @@ interface Project {
   techStack: string[]
   startedFrom: string
   items: ProjectItem[]
+  agent?: AgentBasic | null
+  agentId?: string | null
 }
 
 const STAGES = [
@@ -51,6 +60,12 @@ export default function ProjectDetailPage() {
   const [editDesc, setEditDesc] = useState('')
   const [addingItem, setAddingItem] = useState<string | null>(null)
   const [newItemTitle, setNewItemTitle] = useState('')
+  const [agents, setAgents] = useState<AgentBasic[]>([])
+  const [showAgentPicker, setShowAgentPicker] = useState(false)
+
+  useEffect(() => {
+    apiFetch('/api/agents').then(d => setAgents((d.agents || []).map((a: any) => ({ id: a.id, name: a.name, model: a.model, status: a.status })))).catch(() => {})
+  }, [])
 
   useEffect(() => {
     if (!id) return
@@ -95,6 +110,18 @@ export default function ProjectDetailPage() {
       const { progress } = await apiFetch(`/api/projects/${project.id}/items/${itemId}`, { method: 'DELETE' })
       setProject(p => p ? { ...p, progress, items: p.items.filter(i => i.id !== itemId) } : p)
     } catch { /* ignore */ }
+  }
+
+  const assignAgent = async (agentId: string | null) => {
+    if (!project) return
+    try {
+      const updated = await apiFetch(`/api/projects/${project.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ agentId }),
+      })
+      setProject(p => p ? { ...p, agent: updated.agent || null, agentId: updated.agentId } : p)
+      setShowAgentPicker(false)
+    } catch {}
   }
 
   const saveEdit = async () => {
@@ -165,6 +192,47 @@ export default function ProjectDetailPage() {
           <span>{project.items.filter(i => i.completed).length} / {project.items.length} items</span>
           <span>•</span>
           <span>Started from {project.startedFrom}</span>
+        </div>
+      </div>
+
+      {/* Assigned Agent */}
+      <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4 mb-6">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Bot size={18} className="text-[var(--accent)]" />
+            {project.agent ? (
+              <div>
+                <span className="text-sm font-medium text-[var(--text)]">{project.agent.name}</span>
+                <span className="text-xs text-[var(--text-dim)] ml-2">{project.agent.model}</span>
+                <div className={`inline-block w-1.5 h-1.5 rounded-full ml-2 ${project.agent.status === 'RUNNING' ? 'bg-green-400' : 'bg-gray-500'}`} />
+              </div>
+            ) : (
+              <span className="text-sm text-[var(--text-muted)]">No agent assigned</span>
+            )}
+          </div>
+          <div className="relative">
+            <button onClick={() => setShowAgentPicker(!showAgentPicker)} className="text-xs bg-[var(--accent)]/10 text-[var(--accent)] px-3 py-1.5 rounded-lg hover:bg-[var(--accent)]/20 transition-colors">
+              {project.agent ? 'Change' : 'Assign Agent'}
+            </button>
+            {showAgentPicker && (
+              <div className="absolute right-0 top-full mt-1 w-56 bg-[var(--card)] border border-[var(--border)] rounded-xl shadow-xl z-50 py-1 overflow-hidden">
+                {agents.map(a => (
+                  <button key={a.id} onClick={() => assignAgent(a.id)} className={`w-full flex items-center gap-2.5 px-3 py-2 text-sm hover:bg-[var(--card-hover)] transition-colors ${project.agentId === a.id ? 'text-[var(--accent)]' : 'text-[var(--text)]'}`}>
+                    <Bot size={14} className={project.agentId === a.id ? 'text-[var(--accent)]' : 'text-[var(--text-muted)]'} />
+                    {a.name}
+                    {project.agentId === a.id && <Check size={12} className="ml-auto" />}
+                  </button>
+                ))}
+                {project.agent && (
+                  <>
+                    <div className="h-px bg-[var(--border)] my-1" />
+                    <button onClick={() => assignAgent(null)} className="w-full px-3 py-2 text-sm text-[var(--text-muted)] hover:bg-[var(--card-hover)] transition-colors">Unassign</button>
+                  </>
+                )}
+                {agents.length === 0 && <p className="px-3 py-2 text-xs text-[var(--text-dim)]">No agents created yet</p>}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
