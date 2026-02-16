@@ -281,21 +281,33 @@ router.post('/message', authenticate, async (req: AuthRequest, res: Response) =>
       })
 
       if ((result as any).bridgeSetup) {
-        // CONNECTOR path: don't mark setup complete yet — wait for bridge
+        // CONNECTOR path: create a Machine + don't mark setup complete yet
         setupStates.delete(userId)
-        // Generate a long-lived bridge token (30 days)
         const secret = process.env.JWT_SECRET || 'dev-secret'
         const token = jwt.sign(
           { userId, type: 'access', bridge: true },
           secret,
-          { expiresIn: '30d' }
+          { expiresIn: '365d' }
         )
+        // Create machine and assign agent to it
+        const machine = await prisma.machine.create({
+          data: {
+            name: 'My Computer',
+            bridgeToken: token,
+            userId,
+          }
+        })
+        await prisma.agent.update({
+          where: { id: agent.id },
+          data: { machineId: machine.id }
+        })
         return res.json({
           reply: result.reply,
           setupComplete: false,
           bridgeSetup: true,
           agentId: agent.id,
           agentName: agent.name,
+          machineId: machine.id,
           bridgeToken: token,
           bridgeCommand: `npx clawhq-bridge --token=${token} --agent=${agent.id}`,
         })

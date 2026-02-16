@@ -18,6 +18,7 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
     const agents = await prisma.agent.findMany({
       where: { userId },
       orderBy: { createdAt: 'desc' },
+      include: { machine: { select: { id: true, name: true, isOnline: true } } },
     });
 
     const agentsWithContainer = await Promise.all(
@@ -40,6 +41,7 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
           lastActiveAt: agent.lastActiveAt,
           createdAt: agent.createdAt,
           updatedAt: agent.updatedAt,
+          machine: (agent as any).machine || null,
         };
       }),
     );
@@ -338,8 +340,12 @@ router.patch('/:agentId', authenticate, async (req: AuthRequest, res: Response) 
     const agent = await prisma.agent.findFirst({ where: { id: agentId, userId } });
     if (!agent) return res.status(404).json({ error: 'Agent not found' });
 
-    const { name, model, systemPrompt, temperature, maxTokens, skills, sessionMode } = req.body;
+    const { name, model, systemPrompt, temperature, maxTokens, skills, sessionMode, machineId } = req.body;
     const data: any = {};
+
+    if (machineId !== undefined) {
+      data.machineId = machineId // null to unassign
+    }
 
     if (sessionMode !== undefined) {
       if (!['separate', 'shared'].includes(sessionMode)) {

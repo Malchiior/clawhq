@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { Bot, Plus, Play, Square, RotateCcw, MoreVertical, Search, Filter, Loader2, Zap, Clock, Copy, Download, Trash2, Edit, Upload } from 'lucide-react'
+import { Bot, Plus, Play, Square, RotateCcw, MoreVertical, Search, Filter, Loader2, Zap, Clock, Copy, Download, Trash2, Edit, Upload, Monitor } from 'lucide-react'
 import { useState, useEffect, useRef } from 'react'
 import { apiFetch } from '../lib/api'
 import { useNavigate } from 'react-router-dom'
@@ -15,6 +15,13 @@ interface Agent {
   totalTokens: number
   createdAt: string
   channels: { channel: { name: string; type: string } }[]
+  machine?: { id: string; name: string } | null
+}
+
+interface Machine {
+  id: string
+  name: string
+  isOnline: boolean
 }
 
 const deployBadge: Record<string, { label: string; color: string }> = {
@@ -59,6 +66,8 @@ export default function AgentsPage() {
   const [pollingInterval, setPollingInterval] = useState<number | null>(null)
   const [menuOpen, setMenuOpen] = useState<string | null>(null)
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
+  const [machines, setMachines] = useState<Machine[]>([])
+  const [moveMenu, setMoveMenu] = useState<string | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
 
   const fetchAgents = async () => {
@@ -71,6 +80,7 @@ export default function AgentsPage() {
   }
 
   useEffect(() => {
+    apiFetch('/api/machines').then(d => setMachines(d.machines || [])).catch(() => {})
     fetchAgents().finally(() => setLoading(false))
     
     // Poll every 3 seconds if there are agents in transitional states
@@ -124,6 +134,15 @@ export default function AgentsPage() {
       a.download = `${data.agent?.name || 'agent'}.claw`
       a.click()
       URL.revokeObjectURL(url)
+    } catch {}
+  }
+
+  const moveAgent = async (agentId: string, machineId: string | null) => {
+    setMenuOpen(null)
+    setMoveMenu(null)
+    try {
+      await apiFetch(`/api/agents/${agentId}`, { method: 'PATCH', body: JSON.stringify({ machineId }) })
+      await fetchAgents()
     } catch {}
   }
 
@@ -253,6 +272,9 @@ export default function AgentsPage() {
                         </div>
                         <div className="flex items-center gap-3 mt-1">
                           <span className="text-xs text-text-muted">{agent.model}</span>
+                          {agent.machine && (
+                            <span className="text-xs text-text-muted">· 💻 {agent.machine.name}</span>
+                          )}
                           {channelNames.length > 0 && (
                             <span className="text-xs text-text-muted">· {channelNames.join(', ')}</span>
                           )}
@@ -290,6 +312,23 @@ export default function AgentsPage() {
                               <button onClick={() => { setMenuOpen(null); navigate(`/agents/${agent.id}`) }} className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-text hover:bg-white/5 transition-colors"><Edit className="w-3.5 h-3.5 text-text-muted" /> Edit</button>
                               <button onClick={() => duplicateAgent(agent.id)} className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-text hover:bg-white/5 transition-colors"><Copy className="w-3.5 h-3.5 text-text-muted" /> Duplicate</button>
                               <button onClick={() => exportAgent(agent.id)} className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-text hover:bg-white/5 transition-colors"><Download className="w-3.5 h-3.5 text-text-muted" /> Export (.claw)</button>
+                              {machines.length > 0 && (
+                                <div className="relative">
+                                  <button onClick={() => setMoveMenu(moveMenu === agent.id ? null : agent.id)} className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-text hover:bg-white/5 transition-colors"><Monitor className="w-3.5 h-3.5 text-text-muted" /> Move to Machine</button>
+                                  {moveMenu === agent.id && (
+                                    <div className="pl-6 pb-1">
+                                      {machines.map(m => (
+                                        <button key={m.id} onClick={() => moveAgent(agent.id, m.id)} className={`w-full text-left px-3 py-1.5 text-xs hover:bg-white/5 transition-colors ${agent.machine?.id === m.id ? 'text-primary' : 'text-text-muted'}`}>
+                                          {m.name} {agent.machine?.id === m.id ? '✓' : ''}
+                                        </button>
+                                      ))}
+                                      {agent.machine && (
+                                        <button onClick={() => moveAgent(agent.id, null)} className="w-full text-left px-3 py-1.5 text-xs text-text-muted hover:bg-white/5 transition-colors">Unassign</button>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
                               <div className="my-1 h-px bg-border" />
                               {deleteConfirm === agent.id ? (
                                 <div className="px-3 py-2 space-y-1.5">

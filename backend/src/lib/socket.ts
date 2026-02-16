@@ -174,8 +174,18 @@ export function initSocketIO(httpServer: HttpServer, corsOrigins: string[]) {
           bridgeHealth.set(agentId, { ...health, updatedAt: new Date().toISOString() })
         }
 
+        // Update machine status if agent has a machine
+        if (agent.machineId) {
+          const updateData: any = { isOnline: true, lastSeen: new Date() }
+          if (health?.platform) updateData.platform = health.platform
+          if (health?.clawVersion) updateData.openclawVersion = health.clawVersion
+          if (health?.nodeVersion) updateData.nodeVersion = health.nodeVersion
+          try {
+            await prisma.machine.update({ where: { id: agent.machineId }, data: updateData })
+          } catch {}
+        }
+
         socket.emit('bridge:registered', { agentId })
-        // Notify frontend watchers about bridge health
         io!.to(`agent:${agentId}`).emit('bridge:health', { agentId, connected: true, health: bridgeHealth.get(agentId) })
         console.log(`🌉 Bridge registered for agent ${agent.name} (${agentId}) [${health?.status || 'unknown'}]`)
       } catch (err: any) {
@@ -238,14 +248,21 @@ export function initSocketIO(httpServer: HttpServer, corsOrigins: string[]) {
         bridgeSockets.delete(agentId)
         socketToAgent.delete(socket.id)
         bridgeHealth.delete(agentId)
-        // Notify frontend
         io!.to(`agent:${agentId}`).emit('bridge:health', { agentId, connected: false, health: null })
         try {
-          await prisma.agent.update({
+          const agent = await prisma.agent.update({
             where: { id: agentId },
             data: { status: 'STOPPED' },
           })
-        } catch { /* agent may have been deleted */ }
+          // Set machine offline if no other agents on it are bridged
+          if (agent.machineId) {
+            const otherAgents = await prisma.agent.findMany({ where: { machineId: agent.machineId, id: { not: agentId } } })
+            const anyStillConnected = otherAgents.some(a => bridgeSockets.has(a.id))
+            if (!anyStillConnected) {
+              await prisma.machine.update({ where: { id: agent.machineId }, data: { isOnline: false } })
+            }
+          }
+        } catch {}
         console.log(`🌉 Bridge disconnected for agent ${agentId}`)
       }
     })

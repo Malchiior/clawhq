@@ -30,6 +30,7 @@ interface PageConfig {
 
 // Templates available for adding new pages
 const PAGE_TEMPLATES = [
+  { slug: 'machines', label: 'Machines', icon: 'Monitor', desc: 'Manage connected computers' },
   { slug: 'tasks', label: 'Tasks', icon: 'CheckSquare', desc: 'Kanban boards & task lists' },
   { slug: 'projects', label: 'Projects', icon: 'FolderKanban', desc: 'Project management' },
   { slug: 'notes', label: 'Notes', icon: 'StickyNote', desc: 'Quick notes & documents' },

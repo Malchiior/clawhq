@@ -9,6 +9,7 @@ import AuthCallbackPage from './pages/AuthCallbackPage'
 import OnboardingPage from './pages/OnboardingPage'
 import DashboardPage from './pages/DashboardPage'
 import AgentsPage from './pages/AgentsPage'
+import MachinesPage from './pages/MachinesPage'
 import NewAgentPage from './pages/NewAgentPage'
 import AgentDetailPage from './pages/AgentDetailPage'
 import QuickDeployPage from './pages/QuickDeployPage'
@@ -79,6 +80,7 @@ export default function App() {
         <Route index element={<DashboardPage />} />
         <Route path="dashboard" element={<DashboardPage />} />
         <Route path="agents" element={<AgentsPage />} />
+        <Route path="machines" element={<MachinesPage />} />
         <Route path="agents/new" element={<NewAgentPage />} />
         <Route path="agents/quick-deploy" element={<QuickDeployPage />} />
         <Route path="agents/:id" element={<AgentDetailPage />} />
