@@ -64,7 +64,7 @@ export default function FloatingChat() {
       const reply: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: data.reply || data.message || data.content || 'No response',
+        content: data.assistantMessage?.content || data.reply || data.message || data.content || 'No response',
         timestamp: Date.now()
       }
       setMessages(prev => [...prev, reply])
