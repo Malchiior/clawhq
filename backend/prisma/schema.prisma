@@ -51,6 +51,7 @@ model User {
   updatedAt     DateTime  @updatedAt
   
   agents        Agent[]
+  machines      Machine[]
   channels      Channel[]
   apiKeys       ApiKey[]
   usageRecords  UsageRecord[]
@@ -74,6 +75,26 @@ model Session {
   
   userId       String
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Machine {
+  id              String    @id @default(cuid())
+  name            String
+  platform        String?   // "win32" | "darwin" | "linux"
+  openclawVersion String?
+  nodeVersion     String?
+  bridgeToken     String?   // JWT for bridge authentication
+  lastSeen        DateTime?
+  isOnline        Boolean   @default(false)
+  
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  agents          Agent[]
+  
+  @@index([userId])
 }
 
 model Agent {
@@ -111,6 +132,8 @@ model Agent {
   
   userId        String
   user          User        @relation(fields: [userId], references: [id])
+  machineId     String?
+  machine       Machine?    @relation(fields: [machineId], references: [id], onDelete: SetNull)
   agentChannels ChannelAgent[]
   logs          AgentLog[]
   memories      AgentMemory[]

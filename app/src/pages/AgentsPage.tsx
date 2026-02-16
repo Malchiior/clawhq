@@ -1,8 +1,9 @@
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { Bot, Plus, Play, Square, RotateCcw, MoreVertical, Search, Filter, Loader2, Zap, Clock } from 'lucide-react'
-import { useState, useEffect } from 'react'
+import { Bot, Plus, Play, Square, RotateCcw, MoreVertical, Search, Filter, Loader2, Zap, Clock, Copy, Download, Trash2, Edit, Upload } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
 import { apiFetch } from '../lib/api'
+import { useNavigate } from 'react-router-dom'
 
 interface Agent {
   id: string
@@ -50,11 +51,15 @@ function getUptime(createdAt: string): string {
 }
 
 export default function AgentsPage() {
+  const navigate = useNavigate()
   const [agents, setAgents] = useState<Agent[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [pollingInterval, setPollingInterval] = useState<number | null>(null)
+  const [menuOpen, setMenuOpen] = useState<string | null>(null)
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
 
   const fetchAgents = async () => {
     try {
@@ -97,6 +102,52 @@ export default function AgentsPage() {
     setActionLoading(null)
   }
 
+  const duplicateAgent = async (agentId: string) => {
+    setMenuOpen(null)
+    setActionLoading(agentId)
+    try {
+      const result = await apiFetch(`/api/agents/${agentId}/duplicate`, { method: 'POST', body: JSON.stringify({}) })
+      await fetchAgents()
+      if (result.agent?.id) navigate(`/agents/${result.agent.id}`)
+    } catch {}
+    setActionLoading(null)
+  }
+
+  const exportAgent = async (agentId: string, withMemory = false) => {
+    setMenuOpen(null)
+    try {
+      const data = await apiFetch(`/api/agents/${agentId}/export?memory=${withMemory}`)
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${data.agent?.name || 'agent'}.claw`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch {}
+  }
+
+  const deleteAgent = async (agentId: string, saveFirst = false) => {
+    setMenuOpen(null)
+    setDeleteConfirm(null)
+    if (saveFirst) await exportAgent(agentId, true)
+    setActionLoading(agentId)
+    try {
+      await apiFetch(`/api/agents/${agentId}`, { method: 'DELETE' })
+      setAgents(prev => prev.filter(a => a.id !== agentId))
+    } catch {}
+    setActionLoading(null)
+  }
+
+  // Close menu on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(null)
+    }
+    if (menuOpen) document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [menuOpen])
+
   const filtered = agents.filter(a =>
     a.name.toLowerCase().includes(search.toLowerCase()) ||
     a.model.toLowerCase().includes(search.toLowerCase())
@@ -116,6 +167,20 @@ export default function AgentsPage() {
               <Clock className="w-3 h-3" /> 30s
             </div>
           </Link>
+          <label className="flex items-center gap-2 bg-card border border-border hover:border-border-light text-text text-sm font-medium px-4 py-2.5 rounded-lg transition-colors cursor-pointer">
+            <Upload className="w-4 h-4" /> Import
+            <input type="file" accept=".claw,.json" className="hidden" onChange={async (e) => {
+              const file = e.target.files?.[0]
+              if (!file) return
+              try {
+                const text = await file.text()
+                const backup = JSON.parse(text)
+                const result = await apiFetch('/api/agents/import', { method: 'POST', body: JSON.stringify({ backup }) })
+                if (result.agent?.id) { await fetchAgents(); navigate(`/agents/${result.agent.id}`) }
+              } catch { alert('Invalid .claw file') }
+              e.target.value = ''
+            }} />
+          </label>
           <Link to="/agents/new" className="flex items-center gap-2 bg-card border border-border hover:border-border-light text-text text-sm font-medium px-4 py-2.5 rounded-lg transition-colors">
             <Plus className="w-4 h-4" /> Advanced
           </Link>
@@ -218,7 +283,29 @@ export default function AgentsPage() {
                             {agent.status === 'ERROR' && <button onClick={() => doAction(agent.id, 'restart')} className="p-1.5 text-accent hover:bg-accent/10 rounded-lg transition-colors"><RotateCcw className="w-4 h-4" /></button>}
                           </>
                         )}
-                        <button className="p-1.5 text-text-muted hover:bg-white/5 rounded-lg transition-colors"><MoreVertical className="w-4 h-4" /></button>
+                        <div className="relative" ref={menuOpen === agent.id ? menuRef : undefined}>
+                          <button onClick={() => setMenuOpen(menuOpen === agent.id ? null : agent.id)} className="p-1.5 text-text-muted hover:bg-white/5 rounded-lg transition-colors"><MoreVertical className="w-4 h-4" /></button>
+                          {menuOpen === agent.id && (
+                            <div className="absolute right-0 top-full mt-1 w-48 bg-card border border-border rounded-xl shadow-xl z-50 py-1 overflow-hidden">
+                              <button onClick={() => { setMenuOpen(null); navigate(`/agents/${agent.id}`) }} className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-text hover:bg-white/5 transition-colors"><Edit className="w-3.5 h-3.5 text-text-muted" /> Edit</button>
+                              <button onClick={() => duplicateAgent(agent.id)} className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-text hover:bg-white/5 transition-colors"><Copy className="w-3.5 h-3.5 text-text-muted" /> Duplicate</button>
+                              <button onClick={() => exportAgent(agent.id)} className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-text hover:bg-white/5 transition-colors"><Download className="w-3.5 h-3.5 text-text-muted" /> Export (.claw)</button>
+                              <div className="my-1 h-px bg-border" />
+                              {deleteConfirm === agent.id ? (
+                                <div className="px-3 py-2 space-y-1.5">
+                                  <p className="text-xs text-text-muted">Delete this agent?</p>
+                                  <div className="flex gap-1.5">
+                                    <button onClick={() => deleteAgent(agent.id, true)} className="flex-1 text-xs bg-primary/10 text-primary px-2 py-1 rounded hover:bg-primary/20 transition-colors">Save & Delete</button>
+                                    <button onClick={() => deleteAgent(agent.id)} className="flex-1 text-xs bg-error/10 text-error px-2 py-1 rounded hover:bg-error/20 transition-colors">Just Delete</button>
+                                  </div>
+                                  <button onClick={() => setDeleteConfirm(null)} className="w-full text-xs text-text-muted hover:text-text py-0.5 transition-colors">Cancel</button>
+                                </div>
+                              ) : (
+                                <button onClick={() => setDeleteConfirm(agent.id)} className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-error hover:bg-error/5 transition-colors"><Trash2 className="w-3.5 h-3.5" /> Delete</button>
+                              )}
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>

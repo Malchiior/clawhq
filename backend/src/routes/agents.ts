@@ -409,6 +409,141 @@ router.delete('/:agentId', authenticate, async (req: AuthRequest, res: Response)
 });
 
 // ---------------------------------------------------------------------------
+// POST /api/agents/:agentId/duplicate — clone an agent
+// ---------------------------------------------------------------------------
+router.post('/:agentId/duplicate', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.userId!
+    const agentId = req.params.agentId as string
+    const agent = await prisma.agent.findFirst({ where: { id: agentId, userId } })
+    if (!agent) { res.status(404).json({ error: 'Agent not found' }); return }
+
+    const { includeMemory } = req.body || {}
+
+    const duplicate = await prisma.agent.create({
+      data: {
+        name: `${agent.name} (Copy)`,
+        modelProvider: agent.modelProvider,
+        model: agent.model,
+        deployMode: agent.deployMode,
+        systemPrompt: agent.systemPrompt,
+        temperature: agent.temperature,
+        maxTokens: agent.maxTokens,
+        skills: agent.skills as any,
+        sessionMode: agent.sessionMode,
+        machineId: agent.machineId,
+        userId,
+      },
+    })
+
+    if (includeMemory) {
+      const memories = await prisma.agentMemory.findMany({ where: { agentId: agentId, isActive: true } })
+      if (memories.length > 0) {
+        await prisma.agentMemory.createMany({
+          data: memories.map(m => ({
+            filePath: m.filePath,
+            content: m.content,
+            fileSize: m.fileSize,
+            checksum: m.checksum,
+            agentId: duplicate.id,
+          })),
+        })
+      }
+    }
+
+    res.json({ agent: duplicate })
+  } catch (err: any) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// ---------------------------------------------------------------------------
+// GET /api/agents/:agentId/export — export agent as .claw JSON backup
+// ---------------------------------------------------------------------------
+router.get('/:agentId/export', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.userId!
+    const agentId = req.params.agentId as string
+    const agent = await prisma.agent.findFirst({ where: { id: agentId, userId } })
+    if (!agent) { res.status(404).json({ error: 'Agent not found' }); return }
+
+    const includeMemory = req.query.memory === 'true'
+    let memoryData: { filePath: string; content: string }[] = []
+    if (includeMemory) {
+      const memories = await prisma.agentMemory.findMany({ where: { agentId, isActive: true } })
+      memoryData = memories.map((m: any) => ({ filePath: m.filePath, content: m.content }))
+    }
+
+    const backup = {
+      version: '1.0',
+      exportedAt: new Date().toISOString(),
+      agent: {
+        name: agent.name,
+        modelProvider: agent.modelProvider,
+        model: agent.model,
+        deployMode: agent.deployMode,
+        systemPrompt: agent.systemPrompt,
+        temperature: agent.temperature,
+        maxTokens: agent.maxTokens,
+        skills: agent.skills,
+        sessionMode: agent.sessionMode,
+      },
+      memory: memoryData,
+    }
+
+    const filename = `${agent.name.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()}.claw`
+    res.setHeader('Content-Type', 'application/json')
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`)
+    res.json(backup)
+  } catch (err: any) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// ---------------------------------------------------------------------------
+// POST /api/agents/import — import agent from .claw backup
+// ---------------------------------------------------------------------------
+router.post('/import', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.userId!
+    const { backup, machineId } = req.body
+    if (!backup?.agent) { res.status(400).json({ error: 'Invalid backup file' }); return }
+
+    const agent = await prisma.agent.create({
+      data: {
+        name: backup.agent.name || 'Imported Agent',
+        modelProvider: backup.agent.modelProvider || 'claude',
+        model: backup.agent.model || 'claude-sonnet-4-20250514',
+        deployMode: backup.agent.deployMode || 'CLOUD',
+        systemPrompt: backup.agent.systemPrompt || null,
+        temperature: backup.agent.temperature ?? 0.7,
+        maxTokens: backup.agent.maxTokens ?? 4096,
+        skills: backup.agent.skills || '[]',
+        sessionMode: backup.agent.sessionMode || 'separate',
+        machineId: machineId || null,
+        userId,
+      },
+    })
+
+    // Import memory if present
+    if (backup.memory?.length > 0) {
+      await prisma.agentMemory.createMany({
+        data: backup.memory.map((m: any) => ({
+          filePath: m.filePath,
+          content: m.content,
+          fileSize: m.content?.length || 0,
+          agentId: agent.id,
+        })),
+      })
+    }
+
+    res.json({ agent })
+  } catch (err: any) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// ---------------------------------------------------------------------------
 // GET /api/agents/:agentId/stats — live container metrics
 // ---------------------------------------------------------------------------
 
