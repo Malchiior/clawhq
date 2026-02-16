@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion'
-import { User, Key, Users, Shield, Bell, Copy, Plus, Trash2, Loader2, Check, Eye, EyeOff, Sun, Moon, CreditCard, ExternalLink, AlertTriangle } from 'lucide-react'
+import { User, Key, Users, Shield, Bell, Copy, Plus, Trash2, Loader2, Check, Eye, EyeOff, Sun, Moon, CreditCard, ExternalLink, AlertTriangle, RotateCcw } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { apiFetch } from '../lib/api'
@@ -206,6 +206,27 @@ export default function SettingsPage() {
                   </div>
                   <ToggleSwitch checked={darkMode} onChange={setDarkMode} />
                 </div>
+              </div>
+
+              {/* Setup */}
+              <div className="bg-card border border-border rounded-xl p-6">
+                <div className="flex items-center gap-2 mb-4">
+                  <RotateCcw className="w-5 h-5 text-primary" />
+                  <h2 className="font-semibold text-text">Setup</h2>
+                </div>
+                <p className="text-sm text-text-muted mb-4">Re-run the setup wizard to change your deployment mode or reconfigure your agent.</p>
+                <button
+                  onClick={async () => {
+                    if (!confirm('This will reset your setup and take you back to the setup wizard. Continue?')) return
+                    try {
+                      await apiFetch('/api/setup/reset', { method: 'POST' })
+                      window.location.href = '/setup'
+                    } catch {}
+                  }}
+                  className="bg-primary/10 border border-primary/20 text-primary text-sm font-medium px-4 py-2 rounded-lg hover:bg-primary/20 transition-all hover:scale-[1.02] active:scale-[0.98]"
+                >
+                  Re-run Setup Wizard
+                </button>
               </div>
 
               {/* Danger Zone */}
