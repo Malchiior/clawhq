@@ -19,7 +19,9 @@
   },
   "devDependencies": {
     "electron": "^28.1.0",
-    "electron-builder": "^24.9.1"
+    "electron-builder": "^24.9.1",
+    "png-to-ico": "^3.0.1",
+    "sharp": "^0.34.5"
   },
   "build": {
     "appId": "dev.clawhq.desktop",
@@ -32,10 +34,15 @@
       "main.js",
       "preload.js",
       "bridge.js",
-      "tray-manager.js"
+      "tray-manager.js",
+      "icon.png",
+      "icon-256.png"
     ],
     "win": {
-      "target": ["nsis"],
+      "target": [
+        "nsis"
+      ],
+      "icon": "icon-256.png",
       "artifactName": "ClawHQ-Setup-${version}.${ext}"
     },
     "nsis": {
@@ -46,11 +53,16 @@
       "runAfterFinish": true
     },
     "mac": {
-      "target": ["dmg"],
+      "target": [
+        "dmg"
+      ],
       "category": "public.app-category.productivity"
     },
     "linux": {
-      "target": ["AppImage", "deb"],
+      "target": [
+        "AppImage",
+        "deb"
+      ],
       "category": "Utility"
     },
     "publish": {

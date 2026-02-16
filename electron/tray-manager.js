@@ -12,9 +12,7 @@ class TrayManager {
 
   create() {
     try {
-      const iconName = process.platform === 'win32' ? 'icon.ico' : 'icon.png'
-      const iconPath = path.join(__dirname, iconName)
-      // Use a 16x16 empty icon if file doesn't exist
+      const iconPath = path.join(__dirname, 'icon.png')
       const icon = fs.existsSync(iconPath) ? iconPath : nativeImage.createEmpty()
       this.tray = new Tray(icon)
       this.tray.setToolTip('ClawHQ Desktop')

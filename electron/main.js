@@ -44,7 +44,7 @@ function createWindow() {
     minWidth: 900,
     minHeight: 600,
     title: 'ClawHQ',
-    // icon: path.join(__dirname, process.platform === 'win32' ? 'icon.ico' : 'icon.png'),
+    icon: path.join(__dirname, 'icon.png'),
     backgroundColor: '#0a0b0f',
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     webPreferences: {
