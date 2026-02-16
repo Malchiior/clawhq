@@ -1,52 +1,70 @@
 {
   "name": "clawhq-desktop",
   "version": "1.0.0",
-  "description": "ClawHQ Desktop - Deploy AI agents in 30 seconds",
+  "description": "ClawHQ Desktop — Your AI command center",
   "main": "main.js",
   "author": "ClawHQ",
   "license": "MIT",
   "scripts": {
     "start": "electron .",
-    "build": "electron-builder",
+    "dev": "electron . --dev",
     "build:win": "electron-builder --win",
     "build:mac": "electron-builder --mac",
-    "build:linux": "electron-builder --linux"
+    "build:linux": "electron-builder --linux",
+    "build": "electron-builder"
+  },
+  "dependencies": {
+    "electron-updater": "^6.1.7",
+    "socket.io-client": "^4.7.4"
+  },
+  "devDependencies": {
+    "electron": "^28.1.0",
+    "electron-builder": "^24.9.1"
   },
   "build": {
     "appId": "dev.clawhq.desktop",
     "productName": "ClawHQ",
+    "copyright": "Copyright © 2026 ClawHQ",
     "directories": {
       "output": "dist"
     },
     "files": [
       "main.js",
       "preload.js",
-      "icon.png"
+      "bridge.js",
+      "tray-manager.js",
+      "icon.png",
+      "icon.ico",
+      "icon.icns"
     ],
     "win": {
-      "target": "nsis",
-      "icon": "icon.png"
-    },
-    "mac": {
-      "target": "dmg",
-      "icon": "icon.png",
-      "category": "public.app-category.developer-tools"
-    },
-    "linux": {
-      "target": "AppImage",
-      "icon": "icon.png",
-      "category": "Development"
+      "target": ["nsis"],
+      "icon": "icon.ico",
+      "artifactName": "ClawHQ-Setup-${version}.${ext}"
     },
     "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "oneClick": true,
+      "allowToChangeInstallationDirectory": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "runAfterFinish": true,
+      "installerIcon": "icon.ico",
+      "uninstallerIcon": "icon.ico"
+    },
+    "mac": {
+      "target": ["dmg"],
+      "icon": "icon.icns",
+      "category": "public.app-category.productivity"
+    },
+    "linux": {
+      "target": ["AppImage", "deb"],
+      "icon": "icon.png",
+      "category": "Utility"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "Malchiior",
+      "repo": "clawhq"
     }
-  },
-  "dependencies": {
-    "electron-updater": "^6.3.9"
-  },
-  "devDependencies": {
-    "electron": "^33.3.1",
-    "electron-builder": "^25.1.8"
   }
 }
