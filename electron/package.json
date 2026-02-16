@@ -32,14 +32,10 @@
       "main.js",
       "preload.js",
       "bridge.js",
-      "tray-manager.js",
-      "icon.png",
-      "icon.ico",
-      "icon.icns"
+      "tray-manager.js"
     ],
     "win": {
       "target": ["nsis"],
-      "icon": "icon.ico",
       "artifactName": "ClawHQ-Setup-${version}.${ext}"
     },
     "nsis": {
@@ -47,18 +43,14 @@
       "allowToChangeInstallationDirectory": false,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "runAfterFinish": true,
-      "installerIcon": "icon.ico",
-      "uninstallerIcon": "icon.ico"
+      "runAfterFinish": true
     },
     "mac": {
       "target": ["dmg"],
-      "icon": "icon.icns",
       "category": "public.app-category.productivity"
     },
     "linux": {
       "target": ["AppImage", "deb"],
-      "icon": "icon.png",
       "category": "Utility"
     },
     "publish": {

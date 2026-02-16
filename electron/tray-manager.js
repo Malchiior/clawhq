@@ -1,6 +1,7 @@
 // ClawHQ Desktop — System Tray Manager
 const { Tray, Menu, nativeImage } = require('electron')
 const path = require('path')
+const fs = require('fs')
 
 class TrayManager {
   constructor(mainWindow, bridge) {
@@ -11,8 +12,11 @@ class TrayManager {
 
   create() {
     try {
-      const iconPath = path.join(__dirname, process.platform === 'win32' ? 'icon.ico' : 'icon.png')
-      this.tray = new Tray(iconPath)
+      const iconName = process.platform === 'win32' ? 'icon.ico' : 'icon.png'
+      const iconPath = path.join(__dirname, iconName)
+      // Use a 16x16 empty icon if file doesn't exist
+      const icon = fs.existsSync(iconPath) ? iconPath : nativeImage.createEmpty()
+      this.tray = new Tray(icon)
       this.tray.setToolTip('ClawHQ Desktop')
       this.updateMenu()
 
