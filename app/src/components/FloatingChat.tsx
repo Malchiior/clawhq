@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { MessageCircle, X, Send, Bot } from 'lucide-react'
+import { MessageCircle, X, Send, Bot, RotateCcw } from 'lucide-react'
 import { apiFetch } from '../lib/api'
 
 interface Message {
@@ -21,6 +21,8 @@ export default function FloatingChat() {
   const [loading, setLoading] = useState(false)
   const [agents, setAgents] = useState<{ id: string; name: string }[]>([])
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null)
+  const [bridgeStatus, setBridgeStatus] = useState<Record<string, boolean>>({})
+  const [resetting, setResetting] = useState(false)
   const messagesRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -37,6 +39,38 @@ export default function FloatingChat() {
   useEffect(() => {
     if (open && inputRef.current) inputRef.current.focus()
   }, [open])
+
+  // Check bridge status for selected agent
+  useEffect(() => {
+    if (!selectedAgent) return
+    apiFetch(`/api/chat/${selectedAgent}/bridge-status`).then(data => {
+      setBridgeStatus(prev => ({ ...prev, [selectedAgent]: data.connected }))
+    }).catch(() => {})
+  }, [selectedAgent])
+
+  const resetGateway = async () => {
+    if (!selectedAgent || resetting) return
+    setResetting(true)
+    try {
+      await apiFetch(`/api/chat/${selectedAgent}/bridge-command`, {
+        method: 'POST', body: JSON.stringify({ command: 'restart-gateway' })
+      })
+      setMessages(prev => [...prev, {
+        id: Date.now().toString(),
+        role: 'assistant',
+        content: '🔄 Gateway reset command sent! It should be back in a few seconds.',
+        timestamp: Date.now()
+      }])
+    } catch {
+      setMessages(prev => [...prev, {
+        id: Date.now().toString(),
+        role: 'assistant',
+        content: '❌ Could not reset gateway — bridge may not be connected.',
+        timestamp: Date.now()
+      }])
+    }
+    setResetting(false)
+  }
 
   // Load agents
   useEffect(() => {
@@ -133,9 +167,17 @@ export default function FloatingChat() {
                 )}
               </div>
             </div>
-            <button onClick={() => setOpen(false)} className="text-[var(--text-muted)] hover:text-[var(--text)] p-1">
-              <X size={18} />
-            </button>
+            <div className="flex items-center gap-1.5">
+              {selectedAgent && bridgeStatus[selectedAgent] && (
+                <button onClick={resetGateway} disabled={resetting} title="Reset OpenClaw Gateway"
+                  className="text-[var(--text-muted)] hover:text-amber-400 p-1.5 rounded-lg hover:bg-amber-500/10 transition-colors disabled:opacity-50">
+                  <RotateCcw size={14} className={resetting ? 'animate-spin' : ''} />
+                </button>
+              )}
+              <button onClick={() => setOpen(false)} className="text-[var(--text-muted)] hover:text-[var(--text)] p-1">
+                <X size={18} />
+              </button>
+            </div>
           </div>
 
           {/* Messages */}
