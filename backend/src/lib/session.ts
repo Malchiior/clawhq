@@ -15,8 +15,8 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 // Token lifespans
-const ACCESS_TOKEN_LIFETIME = '15m' // 15 minutes
-const REFRESH_TOKEN_LIFETIME = '7d' // 7 days
+const ACCESS_TOKEN_LIFETIME = '1h' // 1 hour
+const REFRESH_TOKEN_LIFETIME = '30d' // 30 days
 
 export interface TokenPair {
   accessToken: string
@@ -35,8 +35,8 @@ export function generateTokenPair(userId: string): TokenPair {
   const refreshJti = uuidv4()
   
   const now = new Date()
-  const expiresAt = new Date(now.getTime() + 15 * 60 * 1000) // 15 minutes
-  const refreshExpiresAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000) // 7 days
+  const expiresAt = new Date(now.getTime() + 60 * 60 * 1000) // 1 hour
+  const refreshExpiresAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000) // 30 days
   
   const accessToken = jwt.sign(
     { userId, jti, type: 'access' },

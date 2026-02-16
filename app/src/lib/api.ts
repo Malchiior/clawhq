@@ -1,5 +1,48 @@
 const API_URL = import.meta.env.VITE_API_URL || ''
 
+let isRefreshing = false
+let refreshPromise: Promise<boolean> | null = null
+
+async function tryRefreshToken(): Promise<boolean> {
+  const refreshToken = localStorage.getItem('clawhq_refresh_token')
+  if (!refreshToken) return false
+
+  // Deduplicate concurrent refresh attempts
+  if (isRefreshing && refreshPromise) return refreshPromise
+
+  isRefreshing = true
+  refreshPromise = (async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken }),
+      })
+      if (!res.ok) return false
+      const data = await res.json()
+      if (data.accessToken) {
+        localStorage.setItem('clawhq_token', data.accessToken)
+        if (data.refreshToken) localStorage.setItem('clawhq_refresh_token', data.refreshToken)
+        return true
+      }
+      return false
+    } catch {
+      return false
+    } finally {
+      isRefreshing = false
+      refreshPromise = null
+    }
+  })()
+
+  return refreshPromise
+}
+
+function forceLogout() {
+  localStorage.removeItem('clawhq_token')
+  localStorage.removeItem('clawhq_refresh_token')
+  window.location.href = '/login'
+}
+
 export async function apiFetch(path: string, options: RequestInit = {}) {
   const token = localStorage.getItem('clawhq_token')
   const headers: Record<string, string> = {
@@ -8,12 +51,24 @@ export async function apiFetch(path: string, options: RequestInit = {}) {
   }
   if (token) headers['Authorization'] = `Bearer ${token}`
 
-  const res = await fetch(`${API_URL}${path}`, { ...options, headers })
+  let res = await fetch(`${API_URL}${path}`, { ...options, headers })
 
   if (res.status === 401) {
-    localStorage.removeItem('clawhq_token')
-    window.location.href = '/login'
-    throw new Error('Unauthorized')
+    // Try refreshing the token
+    const refreshed = await tryRefreshToken()
+    if (refreshed) {
+      // Retry with new token
+      const newToken = localStorage.getItem('clawhq_token')
+      if (newToken) headers['Authorization'] = `Bearer ${newToken}`
+      res = await fetch(`${API_URL}${path}`, { ...options, headers })
+      if (res.status === 401) {
+        forceLogout()
+        throw new Error('Unauthorized')
+      }
+    } else {
+      forceLogout()
+      throw new Error('Unauthorized')
+    }
   }
 
   if (!res.ok) {
@@ -29,16 +84,26 @@ export async function apiUpload(path: string, formData: FormData) {
   const headers: Record<string, string> = {}
   if (token) headers['Authorization'] = `Bearer ${token}`
 
-  const res = await fetch(`${API_URL}${path}`, {
+  let res = await fetch(`${API_URL}${path}`, {
     method: 'POST',
     headers,
     body: formData,
   })
 
   if (res.status === 401) {
-    localStorage.removeItem('clawhq_token')
-    window.location.href = '/login'
-    throw new Error('Unauthorized')
+    const refreshed = await tryRefreshToken()
+    if (refreshed) {
+      const newToken = localStorage.getItem('clawhq_token')
+      if (newToken) headers['Authorization'] = `Bearer ${newToken}`
+      res = await fetch(`${API_URL}${path}`, { method: 'POST', headers, body: formData })
+      if (res.status === 401) {
+        forceLogout()
+        throw new Error('Unauthorized')
+      }
+    } else {
+      forceLogout()
+      throw new Error('Unauthorized')
+    }
   }
 
   if (!res.ok) {
