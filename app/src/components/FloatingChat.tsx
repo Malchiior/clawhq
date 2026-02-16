@@ -57,7 +57,7 @@ export default function FloatingChat() {
     setLoading(true)
 
     try {
-      const data = await apiFetch(`/api/chat/${selectedAgent}/message`, {
+      const data = await apiFetch(`/api/chat/${selectedAgent}/messages`, {
         method: 'POST',
         body: JSON.stringify({ message: text })
       })
