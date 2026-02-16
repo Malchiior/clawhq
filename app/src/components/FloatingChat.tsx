@@ -40,11 +40,10 @@ export default function FloatingChat() {
 
   // Load agents
   useEffect(() => {
-    apiFetch('/api/agents').then((r: Response) => r.json()).then((data: any[]) => {
-      if (Array.isArray(data)) {
-        setAgents(data.map((a: any) => ({ id: a.id, name: a.name })))
-        if (data.length > 0 && !selectedAgent) setSelectedAgent(data[0].id)
-      }
+    apiFetch('/api/agents').then((data: any) => {
+      const list = Array.isArray(data) ? data : data.agents || []
+      setAgents(list.map((a: any) => ({ id: a.id, name: a.name })))
+      if (list.length > 0 && !selectedAgent) setSelectedAgent(list[0].id)
     }).catch(() => {})
   }, [])
 
@@ -58,12 +57,10 @@ export default function FloatingChat() {
     setLoading(true)
 
     try {
-      const res = await apiFetch(`/api/chat/${selectedAgent}/message`, {
+      const data = await apiFetch(`/api/chat/${selectedAgent}/message`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: text })
       })
-      const data = await res.json()
       const reply: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
