@@ -477,6 +477,10 @@ const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function ChatPanel
       {isConnectorMode && (
         <BridgeBanner connected={bridgeConnected} agentId={agentId} />
       )}
+      {/* Restart button for CLOUD mode */}
+      {deployMode === 'CLOUD' && (
+        <CloudRestartBanner agentId={agentId} status={agentStatus} />
+      )}
 
       {/* Search bar */}
       <AnimatePresence>
@@ -1089,6 +1093,38 @@ function FileTypeIcon({ type, className }: { type: string; className?: string })
     return <FileText className={className} />
   }
   return <File className={className} />
+}
+
+function CloudRestartBanner({ agentId, status }: { agentId: string; status?: string }) {
+  const [restarting, setRestarting] = useState(false)
+  const [result, setResult] = useState<string | null>(null)
+
+  const restart = async () => {
+    setRestarting(true)
+    setResult(null)
+    try {
+      await apiFetch(`/api/agents/${agentId}/restart`, { method: 'POST' })
+      setResult('✅ Agent restarted')
+      setTimeout(() => setResult(null), 3000)
+    } catch {
+      setResult('❌ Restart failed')
+      setTimeout(() => setResult(null), 3000)
+    }
+    setRestarting(false)
+  }
+
+  return (
+    <div className="flex items-center gap-2 px-4 py-1.5 text-xs border-b border-border bg-primary/5">
+      <div className={`w-1.5 h-1.5 rounded-full ${status === 'RUNNING' ? 'bg-success animate-pulse' : 'bg-text-muted'}`} />
+      <span className="text-text-muted">☁️ Cloud Agent {status === 'RUNNING' ? '· Running' : '· Stopped'}</span>
+      {result && <span className="text-text-muted">{result}</span>}
+      <button onClick={restart} disabled={restarting}
+        className="ml-auto text-[10px] bg-warning/10 text-warning px-2.5 py-0.5 rounded-md hover:bg-warning/20 transition-colors disabled:opacity-50 font-medium"
+        title="Restart the cloud agent container">
+        {restarting ? '🔄 Restarting...' : '🔄 Restart Agent'}
+      </button>
+    </div>
+  )
 }
 
 export default ChatPanel
