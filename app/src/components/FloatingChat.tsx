@@ -59,7 +59,7 @@ export default function FloatingChat() {
     try {
       const data = await apiFetch(`/api/chat/${selectedAgent}/messages`, {
         method: 'POST',
-        body: JSON.stringify({ message: text })
+        body: JSON.stringify({ content: text })
       })
       const reply: Message = {
         id: (Date.now() + 1).toString(),

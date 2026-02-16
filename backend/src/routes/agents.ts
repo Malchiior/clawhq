@@ -406,6 +406,15 @@ router.delete('/:agentId', authenticate, async (req: AuthRequest, res: Response)
     // Destroy container (safe if none exists)
     try { await containerOrchestrator.destroyContainer(userId, agentId); } catch {}
 
+    // Clean up related records
+    await prisma.$transaction([
+      prisma.chatMessage.deleteMany({ where: { agentId } }),
+      prisma.agentLog.deleteMany({ where: { agentId } }),
+      prisma.agentMemory.deleteMany({ where: { agentId } }),
+      prisma.agentSnapshot.deleteMany({ where: { agentId } }),
+      prisma.channelAgent.deleteMany({ where: { agentId } }),
+    ].filter(Boolean))
+
     await prisma.agent.delete({ where: { id: agentId } });
     res.json({ message: 'Agent deleted' });
   } catch (error) {
